@@ -12,6 +12,35 @@
 
 using tokenizers::Tokenizer;
 
+void printInputTensorSample(const std::vector<Ort::Value>& input_tensors) {
+    for (size_t i = 0; i < input_tensors.size(); ++i) {
+        auto tensor_info = input_tensors[i].GetTensorTypeAndShapeInfo();
+        auto shape = tensor_info.GetShape();
+        auto type = tensor_info.GetElementType();
+
+        std::cout << "Input tensor " << i << ":" << std::endl;
+        std::cout << "  Shape: ";
+        for (auto dim : shape) {
+            std::cout << dim << " ";
+        }
+        std::cout << std::endl;
+
+        std::cout << "  Data sample: ";
+        if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
+            auto data = input_tensors[i].GetTensorData<int64_t>();
+            for (size_t j = 0; j < std::min(static_cast<size_t>(10), tensor_info.GetElementCount()); ++j) {
+                std::cout << data[j] << " ";
+            }
+        } else if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL) {
+            auto data = input_tensors[i].GetTensorData<bool>();
+            for (size_t j = 0; j < std::min(static_cast<size_t>(10), tensor_info.GetElementCount()); ++j) {
+                std::cout << (data[j] ? "true " : "false ");
+            }
+        }
+        std::cout << std::endl;
+    }
+}
+
 std::string LoadBytesFromFile(const std::string& path) {
   std::ifstream fs(path, std::ios::in | std::ios::binary);
   if (fs.fail()) {
@@ -70,6 +99,22 @@ struct BatchOutput {
     std::vector<std::vector<std::string>> batchTokens;
     std::vector<std::vector<int>> batchWordsStartIdx;
     std::vector<std::vector<int>> batchWordsEndIdx;
+};
+
+struct InputData {
+    std::vector<int64_t> inputsIds;
+    std::vector<int64_t> attentionMasks;
+    std::vector<int64_t> wordsMasks;
+    std::vector<int64_t> textLengths;
+    std::vector<int64_t> spanIdxs;
+    std::vector<int> spanMasksBool;
+};
+
+struct Span {
+    int startIdx;
+    int endIdx;
+    std::string classLabel;
+    double prob;
 };
 
 class Processor {
@@ -160,22 +205,22 @@ public:
             std::vector<int64_t> inputIds = {1};  // Assuming 1 is some initial token id (CLS token in BERT)
             std::vector<int64_t> attentionMask = {1};
             
-            for (size_t wordId = 0; wordId < tokenizedInputs.size(); ++wordId) {
-                const auto& word = tokenizedInputs[wordId];
+            size_t wordId = 1;
+            for (size_t tokenId = 0; tokenId < tokenizedInputs.size(); ++tokenId) {
+                const auto& word = tokenizedInputs[tokenId];
                 std::vector<int> wordTokens = nonConstTokenizer.Encode(word);
-                // wordTokens.erase(wordTokens.begin());  // Removing start token
-                // if (!wordTokens.empty()) wordTokens.pop_back();  // Removing end token
 
-                for (size_t tokenId = 0; tokenId < wordTokens.size(); ++tokenId) {
+                for (size_t t = 0; t < wordTokens.size(); ++t) {
                     attentionMask.push_back(1);
-                    if (wordId < static_cast<size_t>(promptLength)) {
+                    if (tokenId < static_cast<size_t>(promptLength)) {
                         wordsMask.push_back(0);
-                    } else if (tokenId == 0) {
+                    } else if (t == 0) {
                         wordsMask.push_back(wordId);
+                        wordId++;
                     } else {
                         wordsMask.push_back(0);
                     }
-                    inputIds.push_back(wordTokens[tokenId]);
+                    inputIds.push_back(wordTokens[t]);
                 }
             }
 
@@ -348,125 +393,290 @@ public:
         return output;
     }
 };
+
+// decoder
+bool isNested(const std::vector<int>& idx1, const std::vector<int>& idx2) {
+    return (idx1[0] <= idx2[0] && idx1[1] >= idx2[1]) || (idx2[0] <= idx1[0] && idx2[1] >= idx1[1]);
+}
+
+// Check for any overlap between two spans
+bool hasOverlapping(const std::vector<int>& idx1, const std::vector<int>& idx2, bool multiLabel = false) {
+    if (std::vector<int>(idx1.begin(), idx1.begin() + 2) == std::vector<int>(idx2.begin(), idx2.begin() + 2)) {
+        return !multiLabel;
+    }
+    if (idx1[0] > idx2[1] || idx2[0] > idx1[1]) {
+        return false;
+    }
+    return true;
+}
+
+// Check if spans overlap but are not nested inside each other
+bool hasOverlappingNested(const std::vector<int>& idx1, const std::vector<int>& idx2, bool multiLabel = false) {
+    if (std::vector<int>(idx1.begin(), idx1.begin() + 2) == std::vector<int>(idx2.begin(), idx2.begin() + 2)) {
+        return !multiLabel;
+    }
+    if (idx1[0] > idx2[1] || idx2[0] > idx1[1] || isNested(idx1, idx2)) {
+        return false;
+    }
+    return true;
+}
+
+double sigmoid(double x) {
+    return 1.0 / (1.0 + std::exp(-x));
+}
+
+
+class Decoder {
+    protected:
+        Config config;
     
+    public:
+        Decoder(const Config& config) :
+            config(config) {}
+        
+    std::vector<std::vector<int>> greedySearch(const std::vector<std::vector<int>>& spans,
+                                            const std::vector<double>& scores,
+                                            bool flatNer = true, bool multiLabel = false) {
+        std::function<bool(const std::vector<int>&, const std::vector<int>&)> hasOv;
+        if (flatNer) {
+            hasOv = [multiLabel](const std::vector<int>& idx1, const std::vector<int>& idx2) {
+                return hasOverlapping(idx1, idx2, multiLabel);;
+            };
+        } else {
+            hasOv = [multiLabel](const std::vector<int>& idx1, const std::vector<int>& idx2) {
+                return hasOverlappingNested(idx1, idx2, multiLabel);
+            };
+        }
+
+        // Create a vector of indices
+        std::vector<size_t> indices(spans.size());
+        for (size_t i = 0; i < spans.size(); ++i) {
+            indices[i] = i;
+        }
+
+        // Sort indices based on corresponding scores in descending order
+        std::sort(indices.begin(), indices.end(), [&scores](size_t a, size_t b) {
+            return scores[a] > scores[b];
+        });
+
+        std::vector<std::vector<int>> newList;
+
+        for (size_t idx : indices) {
+            const auto& b = spans[idx];
+            bool flag = false;
+            for (const auto& newSpan : newList) {
+                if (hasOv(b, newSpan)) {
+                    flag = true;
+                    break;
+                }
+            }
+            if (!flag) {
+                newList.push_back(b);
+            }
+        }
+
+        // Sort by start position
+        std::sort(newList.begin(), newList.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
+            return a[0] < b[0];
+        });
+
+        return newList;
+    }
+};
+
+
+class SpanDecoder : public Decoder {
+    public:
+        SpanDecoder(const Config& config) : Decoder(config) {}
+
+    std::vector<std::vector<Span>> decode(
+        int batchSize,
+        int inputLength,
+        int maxWidth,
+        int numEntities,
+        const std::vector<std::vector<int>>& batchWordsStartIdx,
+        const std::vector<std::vector<int>>& batchWordsEndIdx,
+        const std::unordered_map<int, std::string>& idToClass,
+        const std::vector<float>& modelOutput,
+        bool flatNer = false,
+        double threshold = 0.5,
+        bool multiLabel = false
+    ) {
+        // Initialize spans for each batch
+        std::vector<std::vector<Span>> spans(batchSize);
+
+        int batchPadding = inputLength * maxWidth * numEntities;
+        int startTokenPadding = maxWidth * numEntities;
+        int endTokenPadding = numEntities;
+
+        // Process the model output
+        for (size_t id = 0; id < modelOutput.size(); ++id) {
+            double value = modelOutput[id];
+            int batch = id / batchPadding;
+            int startToken = (id / startTokenPadding) % inputLength;
+            int endToken = startToken + ((id / endTokenPadding) % maxWidth);
+            int entity = id % numEntities;
+            double prob = sigmoid(value);
+
+            if (prob >= threshold &&
+                batch < batchSize &&
+                startToken < batchWordsStartIdx[batch].size() &&
+                endToken < batchWordsEndIdx[batch].size()) {
+
+                Span span;
+                span.startIdx = batchWordsStartIdx[batch][startToken];
+                span.endIdx = batchWordsEndIdx[batch][endToken];
+                // Adjusting for 1-based indexing in idToClass
+                auto it = idToClass.find(entity + 1);
+                if (it != idToClass.end()) {
+                    span.classLabel = it->second;
+                } else {
+                    span.classLabel = "Unknown";
+                }
+                span.prob = prob;
+
+                spans[batch].push_back(span);
+            }
+        }
+
+        // Apply greedy search to each batch
+        std::vector<std::vector<Span>> allSelectedSpans(batchSize);
+
+        for (int batch = 0; batch < batchSize; ++batch) {
+            const std::vector<Span>& resI = spans[batch];
+
+            // Extract spans and scores for greedySearch
+            std::vector<std::vector<int>> spansForGreedySearch;
+            std::vector<double> scoresForGreedySearch;
+
+            for (const Span& s : resI) {
+                spansForGreedySearch.push_back({s.startIdx, s.endIdx});
+                scoresForGreedySearch.push_back(s.prob);
+            }
+
+            // Call greedySearch
+            std::vector<std::vector<int>> selectedSpansIndices = greedySearch(spansForGreedySearch, scoresForGreedySearch, flatNer, multiLabel);
+
+            // Reconstruct selected Spans
+            std::vector<Span> selectedSpans;
+
+            for (const auto& indices : selectedSpansIndices) {
+                int start = indices[0];
+                int end = indices[1];
+
+                // Find the Span in resI with matching start and end indices
+                for (const Span& s : resI) {
+                    if (s.startIdx == start && s.endIdx == end) {
+                        selectedSpans.push_back(s);
+                        break;  // Assuming no duplicates
+                    }
+                }
+            }
+
+            allSelectedSpans[batch] = selectedSpans;
+        }
+
+        return allSelectedSpans;
+    }
+};
 
 class Model {
 protected:
     const char* model_path;
+    Config config;
     SpanProcessor processor;
+    SpanDecoder decoder;
     Ort::Env env;
     Ort::SessionOptions session_options;
     Ort::Session session;
 
 public:
-    Model(const char* path, SpanProcessor proc) :
-        model_path(path), processor(proc),
+    Model(const char* path, Config config, SpanProcessor proc, SpanDecoder decoder) :
+        model_path(path), config(config), processor(proc), decoder(decoder),
         env(ORT_LOGGING_LEVEL_WARNING, "test"), session_options(),
         session(env, model_path, session_options) {}
 
-    std::vector<Ort::Value> prepareInput(const BatchOutput& batch) {
+    void prepareInput(const BatchOutput& batch, std::vector<Ort::Value>& input_tensors, InputData& inputData) {
         Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         std::vector<int64_t> shape = {batch.batchSize, batch.numTokens};
 
-    std::cout << "Input shape: [" << shape[0] << ", " << shape[1] << "]" << std::endl;
-    std::cout << "inputsIds size: " << batch.inputsIds.size() << std::endl;
-    std::cout << "attentionMasks size: " << batch.attentionMasks.size() << std::endl;
-    std::cout << "wordsMasks size: " << batch.wordsMasks.size() << std::endl;
-    std::cout<< "Input ids: ";
-    
-    for (int i = 0; i<batch.inputsIds.size(); i++) {
-        std::cout << batch.inputsIds[i] << ", ";
-    }
-    std::cout << std::endl;
+        inputData.inputsIds = batch.inputsIds;
+        inputData.attentionMasks = batch.attentionMasks;
+        inputData.wordsMasks = batch.wordsMasks;
 
-        std::vector<Ort::Value> input_tensors;
-
-        // Create non-const copies of the data
-        // std::vector<int64_t> inputsIds(batch.inputsIds.begin(), batch.inputsIds.end());
-        std::vector<int64_t> attentionMasks(batch.attentionMasks.begin(), batch.attentionMasks.end());
-        std::vector<int64_t> wordsMasks(batch.wordsMasks.begin(), batch.wordsMasks.end());
-
-    std::cout<< "Input ids1: ";
-    for (int i = 0; i<batch.inputsIds.size(); i++) {
-        std::cout << batch.inputsIds[i] << ", ";
-    }
-
-    std::vector<int64_t> inputsIds = {128001, 2, 3, 4, 5, 2, 3, 4, 5, 128002, 1, 9, 2, 3, 4, 5, 2, 3, 4, 5, 128002, 1};
-
-        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, inputsIds.data(), inputsIds.size(), shape.data(), shape.size()));
-        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, attentionMasks.data(), attentionMasks.size(), shape.data(), shape.size()));
-        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, wordsMasks.data(), wordsMasks.size(), shape.data(), shape.size()));
+        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, inputData.inputsIds.data(), inputData.inputsIds.size(), shape.data(), shape.size()));
+        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, inputData.attentionMasks.data(), inputData.attentionMasks.size(), shape.data(), shape.size()));
+        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, inputData.wordsMasks.data(), inputData.wordsMasks.size(), shape.data(), shape.size()));
         
         std::vector<int64_t> text_lengths_shape = {batch.batchSize, 1};
 
-    std::cout << "Text lengths shape: [" << text_lengths_shape[0] << "]" << std::endl;
-    std::cout << "textLengths size: " << batch.textLengths.size() << std::endl;
+        inputData.textLengths = batch.textLengths;
 
-        for (int i = 0; i<batch.textLengths.size(); i++) {
-            std::cout << "Text lengths: "<< batch.textLengths[i] << ", ";
-        }
-        std::cout << std::endl;
-
-        std::vector<int64_t> textLengths(batch.textLengths.begin(), batch.textLengths.end());
-        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, textLengths.data(), textLengths.size(), text_lengths_shape.data(), text_lengths_shape.size()));
+        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, inputData.textLengths.data(), inputData.textLengths.size(), text_lengths_shape.data(), text_lengths_shape.size()));
 
         int64_t numSpans = batch.numWords*batch.maxWidth;
-
-    std::cout << "Check Span Idxs: " << numSpans << " Actual size is " << batch.spanIdxs.size() << std::endl;
 
         std::vector<int64_t> span_shape = {batch.batchSize, numSpans, 2};
         std::vector<int64_t> span_mask_shape = {batch.batchSize, numSpans};
 
-    std::cout << "Span shape: [" << span_shape[0] << ", " << span_shape[1] << ", " << span_shape[2] << "]" << std::endl;
-    std::cout << "spanIdxs size: " << batch.spanIdxs.size() << std::endl;
-    std::cout << "Expected size: " << (batch.batchSize * numSpans * 2) << std::endl;
-    std::cout << "Span mask shape: [" << span_mask_shape[0] << ", " << span_mask_shape[1] << "]" << std::endl;
-    std::cout << "spanMasks size: " << batch.spanMasks.size() << std::endl;
-    std::cout << "Expected size: " << (batch.batchSize * numSpans) << std::endl;
+        inputData.spanIdxs = batch.spanIdxs;
 
-        std::vector<int64_t> spanIdxs(batch.spanIdxs.begin(), batch.spanIdxs.end());
-        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, spanIdxs.data(), spanIdxs.size(), span_shape.data(), span_shape.size()));
+        input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, inputData.spanIdxs.data(), inputData.spanIdxs.size(), span_shape.data(), span_shape.size()));
         
-        std::vector<int> spanMasksBool;
-        spanMasksBool.reserve(batch.spanMasks.size());
+        inputData.spanMasksBool.reserve(batch.spanMasks.size());
         for (const auto& mask : batch.spanMasks) {
-            spanMasksBool.push_back(mask != 0);
-        }
-    
-        input_tensors.push_back(Ort::Value::CreateTensor<bool>(memory_info, reinterpret_cast<bool*>(spanMasksBool.data()), spanMasksBool.size(), span_mask_shape.data(), span_mask_shape.size()));
+            inputData.spanMasksBool.push_back(mask != 0);
+        };
 
-        return input_tensors;
+        input_tensors.push_back(Ort::Value::CreateTensor<bool>(memory_info, reinterpret_cast<bool*>(inputData.spanMasksBool.data()), inputData.spanMasksBool.size(), span_mask_shape.data(), span_mask_shape.size()));
     }
 
-    std::vector<Ort::Value> inference(const std::vector<std::string>& texts, const std::vector<std::string>& entities) {
-       Ort::AllocatorWithDefaultOptions allocator;
-
-       std::cout << "Number of model inputs: " << session.GetInputCount() << std::endl;
-       std::cout << "Number of model outputs: " << session.GetOutputCount() << std::endl;
-
-       for (size_t i = 0; i < session.GetInputCount(); i++) {
-           auto input_name = session.GetInputNameAllocated(i, allocator);
-           auto type_info = session.GetInputTypeInfo(i);
-           auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
-           
-           std::cout << "Input " << i << ":" << std::endl;
-           std::cout << "  Name: " << input_name.get() << std::endl;
-           std::cout << "  Type: " << tensor_info.GetElementType() << std::endl;
-           std::cout << "  Shape: ";
-           for (auto& dim : tensor_info.GetShape()) {
-               std::cout << dim << " ";
-           }
-           std::cout << std::endl;
-       }
-
+    std::vector<std::vector<Span>> inference(const std::vector<std::string>& texts, const std::vector<std::string>& entities,
+                                            bool flatNer = false,
+                                            double threshold = 0.5,
+                                            bool multiLabel = false) {
         BatchOutput batch = processor.prepareBatch(texts, entities);
+        std::vector<Ort::Value> input_tensors;
+        InputData inputData;
+
+        prepareInput(batch, input_tensors, inputData);
+
         std::vector<const char*> input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
         std::vector<const char*> output_names = {"logits"}; // Adjust based on your model's output
+        
+        printInputTensorSample(input_tensors);
 
-        auto input_tensors = prepareInput(batch);
+        std::vector<Ort::Value> modelOutputs = session.Run(Ort::RunOptions{nullptr}, input_names.data(), input_tensors.data(), input_tensors.size(), output_names.data(), output_names.size());
 
-        return session.Run(Ort::RunOptions{nullptr}, input_names.data(), input_tensors.data(), input_tensors.size(), output_names.data(), output_names.size());
+        Ort::Value& output_tensor = modelOutputs[0];
+        Ort::TensorTypeAndShapeInfo output_info = output_tensor.GetTensorTypeAndShapeInfo();
+        std::vector<int64_t> output_shape = output_info.GetShape();
+
+        // Compute total number of elements
+        size_t total_elements = 1;
+        for (size_t i = 0; i < output_shape.size(); ++i) {
+            total_elements *= output_shape[i];
+        }
+
+        const float* output_data = output_tensor.GetTensorData<float>();
+        std::vector<float> modelOutput(output_data, output_data + total_elements);
+
+        int batchSize = batch.inputsIds.size();
+        int maxWidth = config.max_width;
+        auto max_iterator = std::max_element(batch.textLengths.begin(), batch.textLengths.end());
+        int inputLength = *max_iterator;
+        int numEntities = entities.size();
+
+        std::vector<std::vector<Span>>  outputSpans = decoder.decode(
+            batchSize, inputLength, maxWidth, numEntities, 
+            batch.batchWordsStartIdx, batch.batchWordsEndIdx, 
+            batch.idToClass,
+            modelOutput,
+            flatNer, threshold, multiLabel
+        );
+        return outputSpans;
     }
+
 };
 
 
@@ -476,7 +686,7 @@ void testWithMinimalInput() {
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "test");
     Ort::SessionOptions session_options;
     Ort::Session session(env, model_path, session_options);
-
+    
     std::vector<int64_t> input_ids = {128003, 2, 3, 4, 5};
     std::vector<int64_t> attention_mask = {1, 1, 1, 1, 1};
     std::vector<int64_t> words_mask = {1, 0, 0, 0, 0};
@@ -532,36 +742,32 @@ void testModelInference() {
         auto tokenizer = Tokenizer::FromBlobJSON(blob);
 
         SpanProcessor processor(config, *tokenizer, splitter);
-        Model model("./model.onnx", processor);
+
+        SpanDecoder decoder(config);
+
+        Model model("./model.onnx", config, processor, decoder);
 
         // Test case 1: Normal input
         {
-            std::vector<std::string> texts = {"Hello"};
-            std::vector<std::string> entities = {"PERSON", "LOCATION"};
+            std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};
+            std::vector<std::string> entities = {"city", "person", "country"};
             
             auto output = model.inference(texts, entities);
             
+            for (size_t batch = 0; batch < output.size(); ++batch) {
+                std::cout << "Batch " << batch << ":\n";
+                for (const auto& span : output[batch]) {
+                    std::cout << "  Span: [" << span.startIdx << ", " << span.endIdx << "], "
+                            << "Class: " << span.classLabel << ", "
+                            << "Prob: " << span.prob << "\n";
+                }
+            }           
+
             assert(!output.empty() && "Output should not be empty");
-            assert(output[0].IsTensor() && "Output should be a tensor");
             std::cout << "Test case 1 (Normal input) passed." << std::endl;
         }
 
-        // Test case 2: Empty input
-        {
-            std::vector<std::string> texts;
-            std::vector<std::string> entities = {"PERSON", "LOCATION"};
-            
-            bool exceptionThrown = false;
-            try {
-                model.inference(texts, entities);
-            } catch (const std::exception& e) {
-                exceptionThrown = true;
-            }
-            assert(exceptionThrown && "Empty input should throw an exception");
-            std::cout << "Test case 2 (Empty input) passed." << std::endl;
-        }
-
-        // Test case 3: Large input
+        // Test case 2: Large input
         {
             std::vector<std::string> texts(100, "This is a very long text to test the model's capability to handle large inputs");
             std::vector<std::string> entities = {"PERSON", "LOCATION", "ORGANIZATION"};
@@ -569,11 +775,10 @@ void testModelInference() {
             auto output = model.inference(texts, entities);
             
             assert(!output.empty() && "Output should not be empty for large input");
-            assert(output[0].IsTensor() && "Output should be a tensor for large input");
-            std::cout << "Test case 3 (Large input) passed." << std::endl;
+            std::cout << "Test case 2 (Large input) passed." << std::endl;
         }
 
-        // Test case 4: Invalid entities
+        // Test case 3: Invalid entities
         {
             std::vector<std::string> texts = {"Hello world"};
             std::vector<std::string> entities = {"INVALID_ENTITY"};
@@ -585,7 +790,7 @@ void testModelInference() {
                 exceptionThrown = true;
             }
             assert(exceptionThrown && "Invalid entities should throw an exception");
-            std::cout << "Test case 4 (Invalid entities) passed." << std::endl;
+            std::cout << "Test case 3 (Invalid entities) passed." << std::endl;
         }
 
         std::cout << "All test cases passed successfully!" << std::endl;
