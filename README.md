@@ -1,5 +1,5 @@
 
-# 👑 GLiNER.cpp: Generalist and Lightweight Named Entity Recognition for JavaScript
+# 👑 GLiNER.cpp: Generalist and Lightweight Named Entity Recognition for C++
 
 GLiNER.cpp is a C++-based inference engine for running GLiNER (Generalist and Lightweight Named Entity Recognition) models. GLiNER can identify any entity type using a bidirectional transformer encoder, offering a practical alternative to traditional NER models and large language models.
 
