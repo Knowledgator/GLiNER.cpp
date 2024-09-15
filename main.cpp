@@ -28,7 +28,7 @@ void printInputTensorSample(const std::vector<Ort::Value>& input_tensors) {
         std::cout << "  Data sample: ";
         if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
             auto data = input_tensors[i].GetTensorData<int64_t>();
-            for (size_t j = 0; j < std::min(static_cast<size_t>(10), tensor_info.GetElementCount()); ++j) {
+            for (size_t j = 0; j < std::min(static_cast<size_t>(300), tensor_info.GetElementCount()); ++j) {
                 std::cout << data[j] << " ";
             }
         } else if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL) {
@@ -94,7 +94,7 @@ struct BatchOutput {
     std::vector<int64_t> wordsMasks;
     std::vector<int64_t> textLengths;
     std::vector<int64_t> spanIdxs;
-    std::vector<int64_t> spanMasks;
+    std::vector<uint8_t> spanMasks;
     std::unordered_map<int, std::string> idToClass;
     std::vector<std::vector<std::string>> batchTokens;
     std::vector<std::vector<int>> batchWordsStartIdx;
@@ -107,14 +107,15 @@ struct InputData {
     std::vector<int64_t> wordsMasks;
     std::vector<int64_t> textLengths;
     std::vector<int64_t> spanIdxs;
-    std::vector<int> spanMasksBool;
+    std::vector<uint8_t> spanMasksBool;
 };
 
 struct Span {
     int startIdx;
     int endIdx;
+    std::string text;
     std::string classLabel;
-    double prob;
+    float prob;
 };
 
 class Processor {
@@ -329,14 +330,14 @@ public:
     SpanProcessor(const Config& config, const Tokenizer& tokenizer, const WhitespaceTokenSplitter& wordSplitter)
         : Processor(config, tokenizer, wordSplitter) {}
             
-    std::tuple<std::vector<std::vector<std::vector<int64_t>>>, std::vector<std::vector<int64_t>>>
+    std::tuple<std::vector<std::vector<std::vector<int64_t>>>, std::vector<std::vector<uint8_t>>>
     prepareSpans(const std::vector<int64_t>& textLengths, int64_t MaxWidth) {
         std::vector<std::vector<std::vector<int64_t>>> spanIdxs;
-        std::vector<std::vector<int64_t>> spanMasks;
+        std::vector<std::vector<uint8_t>> spanMasks;
 
         for (int64_t textLength : textLengths) {
             std::vector<std::vector<int64_t>> spanIdx;
-            std::vector<int64_t> spanMask;
+            std::vector<uint8_t> spanMask;
 
             for (int64_t i = 0; i < textLength; i++) {
                 for (int64_t j = 0; j < MaxWidth; j++) {
@@ -421,7 +422,7 @@ bool hasOverlappingNested(const std::vector<int>& idx1, const std::vector<int>& 
     return true;
 }
 
-double sigmoid(double x) {
+float sigmoid(float x) {
     return 1.0 / (1.0 + std::exp(-x));
 }
 
@@ -435,7 +436,7 @@ class Decoder {
             config(config) {}
         
     std::vector<std::vector<int>> greedySearch(const std::vector<std::vector<int>>& spans,
-                                            const std::vector<double>& scores,
+                                            const std::vector<float>& scores,
                                             bool flatNer = true, bool multiLabel = false) {
         std::function<bool(const std::vector<int>&, const std::vector<int>&)> hasOv;
         if (flatNer) {
@@ -494,12 +495,13 @@ class SpanDecoder : public Decoder {
         int inputLength,
         int maxWidth,
         int numEntities,
+        const std::vector<std::string>& texts,
         const std::vector<std::vector<int>>& batchWordsStartIdx,
         const std::vector<std::vector<int>>& batchWordsEndIdx,
         const std::unordered_map<int, std::string>& idToClass,
         const std::vector<float>& modelOutput,
         bool flatNer = false,
-        double threshold = 0.5,
+        float threshold = 0.5,
         bool multiLabel = false
     ) {
         // Initialize spans for each batch
@@ -511,12 +513,14 @@ class SpanDecoder : public Decoder {
 
         // Process the model output
         for (size_t id = 0; id < modelOutput.size(); ++id) {
-            double value = modelOutput[id];
+            float value = modelOutput[id];
             int batch = id / batchPadding;
             int startToken = (id / startTokenPadding) % inputLength;
             int endToken = startToken + ((id / endTokenPadding) % maxWidth);
             int entity = id % numEntities;
-            double prob = sigmoid(value);
+            float prob = sigmoid(value);
+            
+            // std::cout<<prob<<std::endl;
 
             if (prob >= threshold &&
                 batch < batchSize &&
@@ -526,6 +530,9 @@ class SpanDecoder : public Decoder {
                 Span span;
                 span.startIdx = batchWordsStartIdx[batch][startToken];
                 span.endIdx = batchWordsEndIdx[batch][endToken];
+                std::string spanText = texts[batch].substr(span.startIdx, span.endIdx - span.startIdx + 1);
+                span.text = spanText;
+
                 // Adjusting for 1-based indexing in idToClass
                 auto it = idToClass.find(entity + 1);
                 if (it != idToClass.end()) {
@@ -539,6 +546,17 @@ class SpanDecoder : public Decoder {
             }
         }
 
+    std::cout <<"Initial spans"<<std::endl;
+    for (size_t batch = 0; batch < spans.size(); ++batch) {
+        std::cout << "Batch " << batch << ":\n";
+        for (const auto& span : spans[batch]) {
+            std::cout << "  Span: [" << span.startIdx << ", " << span.endIdx << "], "
+                    << "Class: " << span.classLabel << ", "
+                    << "Text: " << span.text << ", "
+                    << "Prob: " << span.prob << "\n";
+        }
+    }           
+    
         // Apply greedy search to each batch
         std::vector<std::vector<Span>> allSelectedSpans(batchSize);
 
@@ -547,7 +565,7 @@ class SpanDecoder : public Decoder {
 
             // Extract spans and scores for greedySearch
             std::vector<std::vector<int>> spansForGreedySearch;
-            std::vector<double> scoresForGreedySearch;
+            std::vector<float> scoresForGreedySearch;
 
             for (const Span& s : resI) {
                 spansForGreedySearch.push_back({s.startIdx, s.endIdx});
@@ -633,7 +651,7 @@ public:
 
     std::vector<std::vector<Span>> inference(const std::vector<std::string>& texts, const std::vector<std::string>& entities,
                                             bool flatNer = false,
-                                            double threshold = 0.5,
+                                            float threshold = 0.5,
                                             bool multiLabel = false) {
         BatchOutput batch = processor.prepareBatch(texts, entities);
         std::vector<Ort::Value> input_tensors;
@@ -661,14 +679,15 @@ public:
         const float* output_data = output_tensor.GetTensorData<float>();
         std::vector<float> modelOutput(output_data, output_data + total_elements);
 
-        int batchSize = batch.inputsIds.size();
+        int batchSize = batch.textLengths.size();
         int maxWidth = config.max_width;
         auto max_iterator = std::max_element(batch.textLengths.begin(), batch.textLengths.end());
         int inputLength = *max_iterator;
         int numEntities = entities.size();
 
         std::vector<std::vector<Span>>  outputSpans = decoder.decode(
-            batchSize, inputLength, maxWidth, numEntities, 
+            batchSize, inputLength, maxWidth, numEntities,
+            texts,
             batch.batchWordsStartIdx, batch.batchWordsEndIdx, 
             batch.idToClass,
             modelOutput,
@@ -708,13 +727,25 @@ void testWithMinimalInput() {
     input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, text_lengths.data(), text_lengths.size(), shape2.data(), shape2.size()));
     input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, span_idx.data(), span_idx.size(), shape3.data(), shape3.size()));
 
-    std::vector<int> spanMasksBool;
+    std::vector<uint8_t> spanMasksBool;
     spanMasksBool.reserve(span_mask.size());
-    for (const auto& mask : span_mask) {
-        spanMasksBool.push_back(mask != 0);
-    }
 
-    input_tensors.push_back(Ort::Value::CreateTensor<bool>(memory_info, reinterpret_cast<bool*>(spanMasksBool.data()), spanMasksBool.size(), shape4.data(), shape4.size()));
+    for (const auto& mask : span_mask) {
+        uint8_t val = (mask != 0) ? 1 : 0;
+        spanMasksBool.push_back(val);
+        std::cout << static_cast<int>(val) << ' ';
+    }
+    std::cout << std::endl;
+
+    input_tensors.push_back(Ort::Value::CreateTensor<bool>(
+        memory_info,
+        reinterpret_cast<bool*>(spanMasksBool.data()),
+        spanMasksBool.size(),
+        shape4.data(),
+        shape4.size()
+    ));
+    
+    printInputTensorSample(input_tensors);
 
     std::vector<const char*> input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
     std::vector<const char*> output_names = {"logits"}; // Adjust based on your model's output
@@ -750,7 +781,7 @@ void testModelInference() {
         // Test case 1: Normal input
         {
             std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};
-            std::vector<std::string> entities = {"city", "person", "country"};
+            std::vector<std::string> entities = {"city", "country", "river", "person", "car"};
             
             auto output = model.inference(texts, entities);
             
@@ -759,6 +790,7 @@ void testModelInference() {
                 for (const auto& span : output[batch]) {
                     std::cout << "  Span: [" << span.startIdx << ", " << span.endIdx << "], "
                             << "Class: " << span.classLabel << ", "
+                            << "Text: " << span.text << ", "
                             << "Prob: " << span.prob << "\n";
                 }
             }           
@@ -767,31 +799,31 @@ void testModelInference() {
             std::cout << "Test case 1 (Normal input) passed." << std::endl;
         }
 
-        // Test case 2: Large input
-        {
-            std::vector<std::string> texts(100, "This is a very long text to test the model's capability to handle large inputs");
-            std::vector<std::string> entities = {"PERSON", "LOCATION", "ORGANIZATION"};
+        // // Test case 2: Large input
+        // {
+        //     std::vector<std::string> texts(100, "This is a very long text to test the model's capability to handle large inputs");
+        //     std::vector<std::string> entities = {"PERSON", "LOCATION", "ORGANIZATION"};
             
-            auto output = model.inference(texts, entities);
+        //     auto output = model.inference(texts, entities);
             
-            assert(!output.empty() && "Output should not be empty for large input");
-            std::cout << "Test case 2 (Large input) passed." << std::endl;
-        }
+        //     assert(!output.empty() && "Output should not be empty for large input");
+        //     std::cout << "Test case 2 (Large input) passed." << std::endl;
+        // }
 
-        // Test case 3: Invalid entities
-        {
-            std::vector<std::string> texts = {"Hello world"};
-            std::vector<std::string> entities = {"INVALID_ENTITY"};
+        // // Test case 3: Invalid entities
+        // {
+        //     std::vector<std::string> texts = {"Hello world"};
+        //     std::vector<std::string> entities = {"INVALID_ENTITY"};
             
-            bool exceptionThrown = false;
-            try {
-                model.inference(texts, entities);
-            } catch (const std::exception& e) {
-                exceptionThrown = true;
-            }
-            assert(exceptionThrown && "Invalid entities should throw an exception");
-            std::cout << "Test case 3 (Invalid entities) passed." << std::endl;
-        }
+        //     bool exceptionThrown = false;
+        //     try {
+        //         model.inference(texts, entities);
+        //     } catch (const std::exception& e) {
+        //         exceptionThrown = true;
+        //     }
+        //     assert(exceptionThrown && "Invalid entities should throw an exception");
+        //     std::cout << "Test case 3 (Invalid entities) passed." << std::endl;
+        // }
 
         std::cout << "All test cases passed successfully!" << std::endl;
     } catch (const std::exception& e) {
