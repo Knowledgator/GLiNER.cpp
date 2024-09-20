@@ -1,146 +1,109 @@
-#include <iostream>
 #include <cmath>
 #include <string>
 #include <vector>
 
-#include "decoder.h"
+#include "GLiNER/decoder.hpp"
+
+using namespace gliner;
 
 float sigmoid(float x) {
     return 1.0 / (1.0 + std::exp(-x));
 }
 
-Decoder::Decoder(const Config& config) :
-            config(config) {}
+SpanDecoder::SpanDecoder(const Config& config) : config(config) {}
 
-bool Decoder::isNested(const std::vector<int>& idx1, const std::vector<int>& idx2) {
-    return (idx1[0] <= idx2[0] && idx1[1] >= idx2[1]) || (idx2[0] <= idx1[0] && idx2[1] >= idx1[1]);
+bool SpanDecoder::isNested(const Span& s1, const Span& s2) {
+    return (s1.startIdx <= s2.startIdx && s2.endIdx <= s1.endIdx) || (s2.startIdx <= s1.startIdx && s1.endIdx <= s2.endIdx);
 }
 
 // Check for any overlap between two spans
-bool Decoder::hasOverlapping(const std::vector<int>& idx1, const std::vector<int>& idx2, bool multiLabel) {
-    if (std::vector<int>(idx1.begin(), idx1.begin() + 2) == std::vector<int>(idx2.begin(), idx2.begin() + 2)) {
+bool SpanDecoder::hasOverlapping(const Span& s1, const Span& s2, bool multiLabel) {
+    if (s1.startIdx == s2.startIdx && s1.endIdx == s2.endIdx) {
         return !multiLabel;
     }
-    if (idx1[0] > idx2[1] || idx2[0] > idx1[1]) {
+    if (s1.startIdx > s2.endIdx || s2.startIdx > s1.endIdx) {
         return false;
     }
     return true;
 }
 
 // Check if spans overlap but are not nested inside each other
-bool Decoder::hasOverlappingNested(const std::vector<int>& idx1, const std::vector<int>& idx2, bool multiLabel) {
-    if (std::vector<int>(idx1.begin(), idx1.begin() + 2) == std::vector<int>(idx2.begin(), idx2.begin() + 2)) {
-        return !multiLabel;
-    }
-    if (idx1[0] > idx2[1] || idx2[0] > idx1[1] || isNested(idx1, idx2)) {
-        return false;
-    }
-    return true;
+bool SpanDecoder::hasOverlappingNested(const Span& s1, const Span& s2, bool multiLabel) {
+    return hasOverlapping(s1, s2, multiLabel) || isNested(s1, s2);
 }
 
-std::vector<std::vector<int>> Decoder::greedySearch(const std::vector<std::vector<int>>& spans,
-                                            const std::vector<float>& scores,
-                                            bool flatNer, bool multiLabel) {
-    std::function<bool(const std::vector<int>&, const std::vector<int>&)> hasOv;
+std::vector<Span> SpanDecoder::greedySearch(
+    const std::vector<Span>& spans, bool flatNer, bool multiLabel
+) { // expected sorted spans by start/end position
+    if (spans.empty()) {
+        return {};
+    }
+
+    std::function<bool(const Span&, const Span&, bool)> hasOv;
     if (flatNer) {
-        hasOv = [this, multiLabel](const std::vector<int>& idx1, const std::vector<int>& idx2) {
-            return this->hasOverlapping(idx1, idx2, multiLabel);;
-        };
+        hasOv = hasOverlapping;
     } else {
-        hasOv = [this, multiLabel](const std::vector<int>& idx1, const std::vector<int>& idx2) {
-            return this->hasOverlappingNested(idx1, idx2, multiLabel);
-        };
+        hasOv = hasOverlappingNested;
     }
 
-    // Create a vector of indices
-    std::vector<size_t> indices(spans.size());
-    for (size_t i = 0; i < spans.size(); ++i) {
-        indices[i] = i;
-    }
+    std::vector<Span> newList;
+    newList.reserve(spans.size());
 
-    // Sort indices based on corresponding scores in descending order
-    std::sort(indices.begin(), indices.end(), [&scores](size_t a, size_t b) {
-        return scores[a] > scores[b];
-    });
-
-    std::vector<std::vector<int>> newList;
-
-    for (size_t idx : indices) {
-        const auto& b = spans[idx];
-        bool flag = false;
-        for (const auto& newSpan : newList) {
-            if (hasOv(b, newSpan)) {
-                flag = true;
-                break;
+    size_t prev = 0, next = 1;
+    for (; next < spans.size(); next++) {
+        if (!hasOv(spans[prev], spans[next], multiLabel)) {
+            newList.push_back(spans[prev]);
+            prev = next;
+        } else {
+            if (spans[prev].prob < spans[next].prob) { // get span with higher score on overlap
+                prev = next;
             }
         }
-        if (!flag) {
-            newList.push_back(b);
-        }
     }
-
-    // Sort by start position
-    std::sort(newList.begin(), newList.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
-        return a[0] < b[0];
-    });
-
+    newList.push_back(spans[prev]);
     return newList;
 }
 
-
-
-SpanDecoder::SpanDecoder(const Config& config) : Decoder(config) {}
-
 std::vector<std::vector<Span>> SpanDecoder::decode(
-    int batchSize,
-    int inputLength,
+    const BatchOutput& batch,
     int maxWidth,
-    int numEntities,
     const std::vector<std::string>& texts,
-    const std::vector<std::vector<int>>& batchWordsStartIdx,
-    const std::vector<std::vector<int>>& batchWordsEndIdx,
-    const std::unordered_map<int, std::string>& idToClass,
+    const std::vector<std::string>& entities,
     const std::vector<float>& modelOutput,
     bool flatNer,
     float threshold,
     bool multiLabel
 ) {
-    // Initialize spans for each batch
-    std::vector<std::vector<Span>> spans(batchSize);
+    auto tokens = batch.batchTokens;
+    int batchSize = batch.batchPrompts.size();
+    int inputLength = batch.numWords;
+    int numEntities = entities.size();
 
-    int batchPadding = inputLength * maxWidth * numEntities;
     int startTokenPadding = maxWidth * numEntities;
+    int batchPadding = inputLength * startTokenPadding;
     int endTokenPadding = numEntities;
 
+    std::vector<std::vector<Span>> spans(batchSize);
     // Process the model output
     for (size_t id = 0; id < modelOutput.size(); ++id) {
         float value = modelOutput[id];
         int batch = id / batchPadding;
         int startToken = (id / startTokenPadding) % inputLength;
         int endToken = startToken + ((id / endTokenPadding) % maxWidth);
-        int entity = id % numEntities;
+        int entity = id % numEntities; // always one of entities
         float prob = sigmoid(value);
         
-        // std::cout<<prob<<std::endl;
-
         if (prob >= threshold &&
             batch < batchSize &&
-            startToken < batchWordsStartIdx[batch].size() &&
-            endToken < batchWordsEndIdx[batch].size()) {
+            startToken < tokens[batch].size() &&
+            endToken < tokens[batch].size()) {
 
             Span span;
-            span.startIdx = batchWordsStartIdx[batch][startToken];
-            span.endIdx = batchWordsEndIdx[batch][endToken];
-            std::string spanText = texts[batch].substr(span.startIdx, span.endIdx - span.startIdx + 1);
+            span.startIdx = tokens[batch][startToken].start;
+            span.endIdx = tokens[batch][endToken].end;
+            std::string spanText = texts[batch].substr(span.startIdx, span.endIdx - span.startIdx);
             span.text = spanText;
-
-            // Adjusting for 1-based indexing in idToClass
-            auto it = idToClass.find(entity + 1);
-            if (it != idToClass.end()) {
-                span.classLabel = it->second;
-            } else {
-                span.classLabel = "Unknown";
-            }
+            span.classLabel = entities[entity];
             span.prob = prob;
 
             spans[batch].push_back(span);
@@ -151,37 +114,8 @@ std::vector<std::vector<Span>> SpanDecoder::decode(
     std::vector<std::vector<Span>> allSelectedSpans(batchSize);
 
     for (int batch = 0; batch < batchSize; ++batch) {
-        const std::vector<Span>& resI = spans[batch];
-
-        // Extract spans and scores for greedySearch
-        std::vector<std::vector<int>> spansForGreedySearch;
-        std::vector<float> scoresForGreedySearch;
-
-        for (const Span& s : resI) {
-            spansForGreedySearch.push_back({s.startIdx, s.endIdx});
-            scoresForGreedySearch.push_back(s.prob);
-        }
-
-        // Call greedySearch
-        std::vector<std::vector<int>> selectedSpansIndices = Decoder::greedySearch(spansForGreedySearch, scoresForGreedySearch, flatNer, multiLabel);
-
-        // Reconstruct selected Spans
-        std::vector<Span> selectedSpans;
-
-        for (const auto& indices : selectedSpansIndices) {
-            int start = indices[0];
-            int end = indices[1];
-
-            // Find the Span in resI with matching start and end indices
-            for (const Span& s : resI) {
-                if (s.startIdx == start && s.endIdx == end) {
-                    selectedSpans.push_back(s);
-                    break;  // Assuming no duplicates
-                }
-            }
-        }
-        allSelectedSpans[batch] = selectedSpans;
+        allSelectedSpans[batch] = greedySearch(spans[batch], flatNer, multiLabel);
     }
 
-    return allSelectedSpans;
+    return std::move(allSelectedSpans);
 }

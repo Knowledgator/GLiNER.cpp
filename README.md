@@ -27,12 +27,6 @@ First of all, clone the repository:
 git clone https://github.com/Knowledgator/GLiNER.cpp.git
 ```
 
-Then you need initialize and update submodules:
-```bash
-cd GLiNER.cpp
-git submodule update --init --recursive
-```
-
 After that you need to download [ONNX runtime](https://github.com/microsoft/onnxruntime/releases) for your system.
 
 Unpack it within the same derictory as GLiNER.cpp code.
@@ -42,13 +36,13 @@ For `tar.gz` files you can use the following command:
 tar -xvzf onnxruntime-linux-x64-1.19.2.tgz 
 ```
 
-Then create build directory and compile the project:
+Then create build directory and compile the project with examples:
 ```bash
-mkdir build
-cd build
-cmake ..
-make -j8
+cmake -D ONNXRUNTIME_ROOTDIR="./onnxruntime-linux-x64-1.19.2" -D BUILD_EXAMPLES=ON -S . -B build
+cmake --build build --target all -j
 ```
+
+If the ONNXRUNTIME_ROOTDIR option (path to your ONNX Runtime) is not provided, ONNX Runtime is expected to be at 'GLiNER.cpp/deps/onnxruntime'.
 
 To run main.cpp you need an ONNX format model and tokenizer.json. You can:
 
@@ -72,35 +66,49 @@ python convert_to_onnx.py --model_path /path/to/your/model --save_path /path/to/
 
 ### Example of usage:
 ```c++
-Config config;
-// specify max length parameter which controls maximum amount of words to be processed;
-config.max_length = 512;
-// specify max_width parameter which controls maximum length os a span;
-config.max_width = 12;
+#include <iostream>
+#include <vector>
+#include <string>
 
-// initialize word tokenizer;
+#include "GLiNER/gliner_config.hpp"
+#include "GLiNER/processor.hpp"
+#include "GLiNER/decoder.hpp"
+#include "GLiNER/model.hpp"
+#include "GLiNER/tokenizer_utils.hpp"
 
-WhitespaceTokenSplitter splitter;
+int main() {
+    gliner::Config config{12, 512};  // Set your max_width and max_length
+    gliner::WhitespaceTokenSplitter splitter;
+    auto blob = gliner::LoadBytesFromFile("./gliner_small-v2.1/tokenizer.json");
 
-// Create the tokenizer
-auto blob = LoadBytesFromFile("tokenizer.json");
-auto tokenizer = Tokenizer::FromBlobJSON(blob);
+    // Create the tokenizer
+    auto tokenizer = Tokenizer::FromBlobJSON(blob);
 
-// Initialize the processor
-SpanProcessor processor(config, *tokenizer, splitter);
+    // Create Processor and SpanDecoder
+    gliner::SpanProcessor processor(config, *tokenizer, splitter);
+    gliner::SpanDecoder decoder(config);
 
-// Initialize the model
-Model model("./model.onnx", processor);
+    // Create Model
+    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder);
 
+    // A sample input
+    std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};
+    std::vector<std::string> entities = {"city", "country", "river", "person", "car"};
 
-std::vector<std::string> texts = {"Hello"};
-std::vector<std::string> entities = {"PERSON", "LOCATION"};
+    auto output = model.inference(texts, entities);
 
-auto output = model.inference(texts, entities);
-
-assert(!output.empty() && "Output should not be empty");
-assert(output[0].IsTensor() && "Output should be a tensor");
-std::cout << "Test case 1 (Normal input) passed." << std::endl;
+    std::cout << "\nTest Model Inference:" << std::endl;
+    for (size_t batch = 0; batch < output.size(); ++batch) {
+        std::cout << "Batch " << batch << ":\n";
+        for (const auto& span : output[batch]) {
+            std::cout << "  Span: [" << span.startIdx << ", " << span.endIdx << "], "
+                        << "Class: " << span.classLabel << ", "
+                        << "Text: " << span.text << ", "
+                        << "Prob: " << span.prob << std::endl;
+        }
+    }
+    return 0;
+}
 ```
 
 ## 🌟 Use Cases

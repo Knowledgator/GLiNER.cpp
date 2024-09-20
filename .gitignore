@@ -1,0 +1,6 @@
+build/
+Makefile
+cmake_install.cmake
+CMakeFiles/
+.vscode/
+onnxruntime/
