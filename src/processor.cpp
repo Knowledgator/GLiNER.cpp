@@ -51,10 +51,11 @@ std::vector<Prompt> SpanProcessor::prepareTextInputs(const std::vector<std::vect
         for (auto t : currTokens) {
             inputText.push_back(t.text);
         }
+
         prompts.push_back({
-            .textLength = int64_t(currTokens.size()),
-            .promptLength = int64_t(promptLength),
-            .prompt = inputText,
+            int64_t(currTokens.size()),
+            int64_t(promptLength),
+            inputText,
         });
     }
 
@@ -120,7 +121,7 @@ void SpanProcessor::prepareSpans(const std::vector<Prompt>& prompts, int64_t Max
 
     for (size_t p = 0; p < prompts.size(); p++) {
         for (int64_t i = 0; i < prompts[p].textLength; i++) { 
-            size_t m = std::min(MaxWidth, prompts[p].textLength - i);
+            int64_t m = std::min(MaxWidth, prompts[p].textLength - i);
             for (int64_t j = 0; j < m; j++) {
                 size_t idx = p*l + i*MaxWidth + j;
                 output.spanIdxs[2*idx] = i;

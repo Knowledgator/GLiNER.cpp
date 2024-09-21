@@ -7,26 +7,22 @@ if(UPDATE_SUBMODULES)
     include(cmake/UpdateSubmodules.cmake)
 endif()
 
-add_library(compiler_flags INTERFACE)
-target_compile_features(compiler_flags INTERFACE cxx_std_17)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
-set(gcc_like_cxx "$<COMPILE_LANG_AND_ID:CXX,ARMClang,AppleClang,Clang,GNU,LCC>")
-set(msvc_cxx "$<COMPILE_LANG_AND_ID:CXX,MSVC>")
-target_compile_options(compiler_flags INTERFACE
-    "$<${gcc_like_cxx}:$<BUILD_INTERFACE:-Wall;-Wextra;-Wshadow;-Wformat=2;-Wunused;>>"
-    "$<${msvc_cxx}:$<BUILD_INTERFACE:-W3>>"
-)
+if (MSVC)
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 option(BUILD_EXAMPLES "Build example programs" OFF)
 
 # Find ONNXRuntime library
 option(ONNXRUNTIME_ROOTDIR "Onnxruntime root dir")
 if(NOT ONNXRUNTIME_ROOTDIR)
-    set(ONNXRUNTIME_ROOTDIR ${PROJECT_SOURCE_DIR}/deps/onnxruntime)
+    message(FATAL_ERROR "The ONNXRuntime path must be specified. Use the -D ONNXRUNTIME_ROOTDIR='absolute_path' option to set it.")
 endif()
 
 set(ONNXRUNTIME_INCLUDE
@@ -51,6 +47,8 @@ if(NOT ONNXRUNTIME_LIB)
     message(FATAL_ERROR "ONNXRuntime library not found. Please check the library path.")
 endif()
 
+option(TOKENIZER_CPP_ROOTDIR "Tokenizer-cpp root dir")
+
 add_subdirectory(deps)
 add_subdirectory(src)
 
@@ -61,8 +59,4 @@ endif()
 if(CMAKE_BUILD_TYPE EQUAL Debug)
     include(CTest)
     add_subdirectory(tests)
-endif()
-
-if (BUILD_EXAMPLES)
-    add_subdirectory(examples)
 endif()

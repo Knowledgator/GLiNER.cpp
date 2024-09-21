@@ -88,8 +88,8 @@ std::vector<std::vector<Span>> SpanDecoder::decode(
     for (size_t id = 0; id < modelOutput.size(); ++id) {
         float value = modelOutput[id];
         int batch = id / batchPadding;
-        int startToken = (id / startTokenPadding) % inputLength;
-        int endToken = startToken + ((id / endTokenPadding) % maxWidth);
+        size_t startToken = (id / startTokenPadding) % inputLength;
+        size_t endToken = startToken + ((id / endTokenPadding) % maxWidth);
         int entity = id % numEntities; // always one of entities
         float prob = sigmoid(value);
         
@@ -117,5 +117,5 @@ std::vector<std::vector<Span>> SpanDecoder::decode(
         allSelectedSpans[batch] = greedySearch(spans[batch], flatNer, multiLabel);
     }
 
-    return std::move(allSelectedSpans);
+    return allSelectedSpans;
 }

@@ -36,13 +36,11 @@ For `tar.gz` files you can use the following command:
 tar -xvzf onnxruntime-linux-x64-1.19.2.tgz 
 ```
 
-Then create build directory and compile the project with examples:
+Then create build directory and compile the project:
 ```bash
-cmake -D ONNXRUNTIME_ROOTDIR="./onnxruntime-linux-x64-1.19.2" -D BUILD_EXAMPLES=ON -S . -B build
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -S . -B build
 cmake --build build --target all -j
 ```
-
-If the ONNXRUNTIME_ROOTDIR option (path to your ONNX Runtime) is not provided, ONNX Runtime is expected to be at 'GLiNER.cpp/deps/onnxruntime'.
 
 To run main.cpp you need an ONNX format model and tokenizer.json. You can:
 

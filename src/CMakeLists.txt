@@ -7,6 +7,6 @@ target_sources(gliner PRIVATE
     tokenizer_utils.cpp
 )
 
+target_include_directories(gliner PUBLIC ${ONNXRUNTIME_INCLUDE})
 target_include_directories(gliner PRIVATE ${PROJECT_SOURCE_DIR}/include)
-target_include_directories(gliner PRIVATE ${ONNXRUNTIME_INCLUDE})
 target_link_libraries(gliner ${ONNXRUNTIME_LIB} tokenizers_cpp)
