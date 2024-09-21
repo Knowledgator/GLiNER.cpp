@@ -29,7 +29,6 @@ namespace gliner {
         std::vector<int64_t> wordsMasks;
         std::vector<int64_t> spanIdxs;
         std::vector<uint8_t> spanMasks;
-        std::unordered_map<int, std::string> idToClass;
         std::vector<std::vector<Token>> batchTokens;
         std::vector<Prompt> batchPrompts;
     };

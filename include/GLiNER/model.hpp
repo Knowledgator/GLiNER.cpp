@@ -23,7 +23,11 @@ namespace gliner {
         std::vector<const char*> output_names;
 
     public:
-        Model(const std::string& path, Config config, SpanProcessor proc, SpanDecoder decoder);
+        Model(const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder);
+        Model(
+            const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder, 
+            const Ort::Env& env, const Ort::SessionOptions& so
+        );
         std::vector<std::vector<Span>> inference(const std::vector<std::string>& texts, const std::vector<std::string>& entities,
                                                 bool flatNer = false, float threshold = 0.5, bool multiLabel = false);
     };

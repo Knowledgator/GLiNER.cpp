@@ -4,10 +4,21 @@
 
 using namespace gliner;
 
-Model::Model(const std::string& path, Config config, SpanProcessor proc, SpanDecoder decoder) :
+Model::Model(const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder) :
     model_path(path), config(config), processor(proc), decoder(decoder),
-    env(ORT_LOGGING_LEVEL_WARNING, "test"), session_options(),
+    env(ORT_LOGGING_LEVEL_WARNING, "gliner"), session_options(),
     session(env, model_path.data(), session_options) 
+{
+    input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
+    output_names = {"logits"};
+}
+
+Model::Model(
+    const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder, 
+    const Ort::Env& env, const Ort::SessionOptions& so
+) :
+    model_path(path), config(config), processor(proc), decoder(decoder),
+    session(env, model_path.data(), so) 
 {
     input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
     output_names = {"logits"};
@@ -43,19 +54,15 @@ std::vector<std::vector<Span>> Model::inference(const std::vector<std::string>& 
     for (auto p : batch.batchPrompts) {
         textLengths.push_back(p.textLength);
     }
-
     input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, textLengths.data(), textLengths.size(), text_lengths_shape.data(), text_lengths_shape.size()));
 
     int64_t numSpans = batch.numWords*batch.maxWidth;
-
     std::vector<int64_t> span_shape = {batch.batchSize, numSpans, 2};
     input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(memory_info, batch.spanIdxs.data(), batch.spanIdxs.size(), span_shape.data(), span_shape.size()));    
     
     std::vector<int64_t> span_mask_shape = {batch.batchSize, numSpans};
     input_tensors.push_back(Ort::Value::CreateTensor<bool>(memory_info, reinterpret_cast<bool*>(batch.spanMasks.data()), batch.spanMasks.size(), span_mask_shape.data(), span_mask_shape.size()));
-    
-    std::vector<Ort::Value> modelOutputs = session.Run(Ort::RunOptions{nullptr}, input_names.data(), input_tensors.data(), input_tensors.size(), output_names.data(), output_names.size());
-
+    std::vector<Ort::Value> modelOutputs = session.Run(Ort::RunOptions(), input_names.data(), input_tensors.data(), input_tensors.size(), output_names.data(), output_names.size());
     Ort::Value& output_tensor = modelOutputs[0];
     Ort::TensorTypeAndShapeInfo output_info = output_tensor.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> output_shape = output_info.GetShape();
