@@ -40,6 +40,22 @@ cmake --build build --target inference_gpu -j
 ./build/inference_gpu
 ```
 
+To use GPU:
+
+- You need to specify it in this contructor using 'device_id' (used in example):
+
+```c++
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, 0); // device_id = 0 (CUDA:0)
+```
+
+OR
+
+- Use custom environment(Ort::Env) and session options(Ort::SessionOptions) of the ONNX runtime: 
+
+```c++
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
+```
+
 ## Model
 
 This example uses the gliner_small-v2.1 ONNX model, which can be found here:

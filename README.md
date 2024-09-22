@@ -109,6 +109,29 @@ int main() {
 }
 ```
 
+## GPU
+
+By default, the CPU is used. To use the GPU, you need to utilize the ONNX runtime with GPU support and set up cuDNN.
+Follow the instructions to install cuDNN here:
+
+https://developer.nvidia.com/cudnn-downloads
+
+To use GPU:
+
+- Specify it using 'device_id':
+
+```c++
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, 0); // device_id = 0 (CUDA:0)
+```
+
+OR
+
+- Use custom environment(Ort::Env) and session options(Ort::SessionOptions) of the ONNX runtime: 
+
+```c++
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
+```
+
 ## 🌟 Use Cases
 
 GLiNER.cpp offers versatile entity recognition capabilities across various domains:
