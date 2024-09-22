@@ -1,58 +1,62 @@
 cmake_minimum_required(VERSION 3.18)
-project(gliner C CXX)
+project(gliner LANGUAGES CXX VERSION 0.0.1)
 
-include(CheckCXXCompilerFlag)
-if(NOT MSVC)
- check_cxx_compiler_flag("-std=c++17" SUPPORT_CXX17)
- set(CMAKE_CXX_FLAGS "-std=c++17 ${CMAKE_CXX_FLAGS}")
- set(CMAKE_CUDA_STANDARD 17)
-else()
- check_cxx_compiler_flag("/std:c++17" SUPPORT_CXX17)
- set(CMAKE_CXX_FLAGS "/std:c++17 ${CMAKE_CXX_FLAGS}")
- set(CMAKE_CUDA_STANDARD 17)
+# Update submodules
+option(UPDATE_SUBMODULES "Update submodules" ON)
+if(UPDATE_SUBMODULES)
+    include(cmake/UpdateSubmodules.cmake)
 endif()
 
-# Include the headers
-include_directories(include)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
 
-# Path to ONNXRuntime
-set(ONNXRUNTIME_ROOTDIR "./onnxruntime-training-linux-x64-1.19.2")
+if (MSVC)
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
-# Include directories for ONNXRuntime
-include_directories(
-  "${ONNXRUNTIME_ROOTDIR}/include"
-  "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime"
-  "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session"
-)
+option(BUILD_EXAMPLES "Build example programs" OFF)
 
 # Find ONNXRuntime library
+option(ONNXRUNTIME_ROOTDIR "Onnxruntime root dir")
+if(NOT ONNXRUNTIME_ROOTDIR)
+    message(FATAL_ERROR "The ONNXRuntime path must be specified. Use the -D ONNXRUNTIME_ROOTDIR='absolute_path' option to set it.")
+endif()
+
+set(ONNXRUNTIME_INCLUDE
+${ONNXRUNTIME_ROOTDIR}/include
+${ONNXRUNTIME_ROOTDIR}/include/onnxruntime
+${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session
+)
+
+include_directories(
+    ${ONNXRUNTIME_INCLUDE}
+)
+
+link_directories(${ONNXRUNTIME_ROOTDIR}/lib)
+
 find_library(ONNXRUNTIME_LIB
-  NAMES onnxruntime libonnxruntime
-  PATHS "${ONNXRUNTIME_ROOTDIR}/lib"
-  NO_DEFAULT_PATH
+    NAMES onnxruntime libonnxruntime
+    PATHS ${ONNXRUNTIME_ROOTDIR}/lib
+    NO_DEFAULT_PATH
 )
 
 if(NOT ONNXRUNTIME_LIB)
-  message(FATAL_ERROR "ONNXRuntime library not found. Please check the library path.")
+    message(FATAL_ERROR "ONNXRuntime library not found. Please check the library path.")
 endif()
 
-# Path to tokenizers-cpp
-set(TOKENIZER_CPP_PATH "./tokenizers-cpp")
+option(TOKENIZER_CPP_ROOTDIR "Tokenizer-cpp root dir")
 
-# Add tokenizers-cpp subdirectory
-add_subdirectory(${TOKENIZER_CPP_PATH} tokenizers EXCLUDE_FROM_ALL)
+add_subdirectory(deps)
+add_subdirectory(src)
 
-# Add executable
-add_executable(main
-  src/processor.cpp
-  src/model.cpp
-  src/decoder.cpp
-  src/tokenizer_utils.cpp
-  main.cpp
-)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
+endif()
 
-# Include directories for tokenizers-cpp
-target_include_directories(main PRIVATE ${TOKENIZER_CPP_PATH}/include)
-
-# Link ONNXRuntime and tokenizers-cpp libraries
-target_link_libraries(main ${ONNXRUNTIME_LIB} tokenizers_cpp)
+if(CMAKE_BUILD_TYPE EQUAL Debug)
+    include(CTest)
+    add_subdirectory(tests)
+endif()
