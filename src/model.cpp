@@ -4,24 +4,50 @@
 
 using namespace gliner;
 
+
+
 Model::Model(const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder) :
-    model_path(path), config(config), processor(proc), decoder(decoder),
-    env(ORT_LOGGING_LEVEL_WARNING, "gliner"), session_options(),
-    session(env, model_path.data(), session_options) 
+    model_path(path), config(config), processor(proc), decoder(decoder)
 {
+    env = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "gliner");
+    session_options = Ort::SessionOptions();
+    session = Ort::Session(env.value(), model_path.data(), session_options.value());
+
     input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
     output_names = {"logits"};
 }
 
 Model::Model(
     const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder, 
-    const Ort::Env& env, const Ort::SessionOptions& so
-) :
-    model_path(path), config(config), processor(proc), decoder(decoder),
-    session(env, model_path.data(), so) 
+    const int device_id
+) : model_path(path), config(config), processor(proc), decoder(decoder)
 {
+    env = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "gliner");
+    session_options = Ort::SessionOptions();
+    useDevice(session_options.value(), device_id);
+    session = Ort::Session(env.value(), model_path.data(), session_options.value());
+
     input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
     output_names = {"logits"};
+}
+
+Model::Model(
+    const std::string& path, const Config& config, const SpanProcessor& proc, const SpanDecoder& decoder, 
+    const Ort::Env& env, const Ort::SessionOptions& session_options
+) :
+    model_path(path), config(config), processor(proc), decoder(decoder)
+{
+    session = Ort::Session(env, model_path.data(), session_options);
+    input_names = {"input_ids", "attention_mask", "words_mask", "text_lengths", "span_idx", "span_mask"};
+    output_names = {"logits"};
+}
+
+void Model::useDevice(Ort::SessionOptions& session_options, const int device_id) {
+    if (device_id >= 0) {
+        OrtCUDAProviderOptions cuda_options;
+        cuda_options.device_id = 0;
+        session_options.AppendExecutionProvider_CUDA(cuda_options);
+    }
 }
 
 bool checkInputs(const std::vector<std::string>& texts, const std::vector<std::string>& entities) {
@@ -62,7 +88,7 @@ std::vector<std::vector<Span>> Model::inference(const std::vector<std::string>& 
     
     std::vector<int64_t> span_mask_shape = {batch.batchSize, numSpans};
     input_tensors.push_back(Ort::Value::CreateTensor<bool>(memory_info, reinterpret_cast<bool*>(batch.spanMasks.data()), batch.spanMasks.size(), span_mask_shape.data(), span_mask_shape.size()));
-    std::vector<Ort::Value> modelOutputs = session.Run(Ort::RunOptions(), input_names.data(), input_tensors.data(), input_tensors.size(), output_names.data(), output_names.size());
+    std::vector<Ort::Value> modelOutputs = session.value().Run(Ort::RunOptions(), input_names.data(), input_tensors.data(), input_tensors.size(), output_names.data(), output_names.size());
     Ort::Value& output_tensor = modelOutputs[0];
     Ort::TensorTypeAndShapeInfo output_info = output_tensor.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> output_shape = output_info.GetShape();
