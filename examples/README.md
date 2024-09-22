@@ -45,6 +45,7 @@ To use GPU:
 - You need to specify it in this contructor using 'device_id' (used in example):
 
 ```c++
+int device_id = 0 // (CUDA:0)
 gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, 0); // device_id = 0 (CUDA:0)
 ```
 
@@ -53,6 +54,8 @@ OR
 - Use custom environment(Ort::Env) and session options(Ort::SessionOptions) of the ONNX runtime: 
 
 ```c++
+Ort::Env env = ...;
+Ort::SessionOptions session_options = ...;
 gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
 ```
 
