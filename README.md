@@ -121,7 +121,8 @@ To use GPU:
 - Specify it using 'device_id':
 
 ```c++
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, 0); // device_id = 0 (CUDA:0)
+int device_id = 0 // (CUDA:0)
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, device_id);
 ```
 
 OR
@@ -129,6 +130,8 @@ OR
 - Use custom environment(Ort::Env) and session options(Ort::SessionOptions) of the ONNX runtime: 
 
 ```c++
+Ort::Env env = ...;
+Ort::SessionOptions session_options = ...;
 gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
 ```
 
