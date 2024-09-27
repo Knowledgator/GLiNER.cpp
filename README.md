@@ -116,6 +116,15 @@ Follow the instructions to install cuDNN here:
 
 https://developer.nvidia.com/cudnn-downloads
 
+Then create build directory and compile the project:
+
+```bash
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -D GPU_CHECK=ON -S . -B build
+cmake --build build --target inference -j
+```
+
+GPU=ON: Enables check for CUDA dependencies. If not provided, the check will be omitted.
+
 To use GPU:
 
 - Specify it using 'device_id':

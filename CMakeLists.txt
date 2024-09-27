@@ -37,6 +37,48 @@ include_directories(
 
 link_directories(${ONNXRUNTIME_ROOTDIR}/lib)
 
+option(GPU_CHECK "Check GPU dependencies." OFF)
+if (GPU_CHECK)
+    execute_process(
+        COMMAND nvidia-smi
+        RESULT_VARIABLE NVIDIA_SMI_RESULT
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+
+    if(NOT NVIDIA_SMI_RESULT EQUAL 0)
+        message(WARNING "NVIDIA GPU driver was not detected or nvidia-smi command not available")
+        set(GPU_CHECK OFF)
+    endif()
+
+    execute_process(
+        COMMAND nvcc --version
+        RESULT_VARIABLE NVCC_RESULT
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+
+    if(NOT NVCC_RESULT EQUAL 0)
+        message(WARNING "NVIDIA GPU compiler was not detected or nvcc --version command not available.")
+        set(GPU_CHECK OFF)
+    endif()
+
+    find_library(CUDNN_LIB
+        NAMES cudnn
+        PATHS CMAKE_CXX_STANDARD_LIBRARIES CMAKE_C_STANDARD_LIBRARIES
+        DOC "Path to cuDNN library"
+    )
+
+    if(NOT CUDNN_LIB)
+        message(WARNING "cuDNN not found. Ensure that cuDNN is installed and available in the system paths.")
+        set(GPU_CHECK OFF)
+    endif()
+
+    if (NOT GPU_CHECK)
+        message(FATAL_ERROR "CUDA GPU dependencies were not resolved. Please check the logs and try again.")
+    endif()
+endif()
+
 find_library(ONNXRUNTIME_LIB
     NAMES onnxruntime libonnxruntime
     PATHS ${ONNXRUNTIME_ROOTDIR}/lib

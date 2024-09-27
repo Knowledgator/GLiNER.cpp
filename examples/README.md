@@ -17,7 +17,7 @@ Build the example and run:
 
 ```bash
 ./download-gliner_small-v2.1.sh
-cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -S . -B build
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -D GPU_CHECK=ON -S . -B build
 cmake --build build --target inference -j
 ./build/inference
 ```
