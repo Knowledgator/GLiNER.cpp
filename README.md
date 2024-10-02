@@ -26,17 +26,29 @@ First of all, clone the repository:
 ```bash
 git clone https://github.com/Knowledgator/GLiNER.cpp.git
 ```
+Then you need initialize and update submodules:
 
-After that you need to download [ONNX runtime](https://github.com/microsoft/onnxruntime/releases) for your system.
+```bash
+cd GLiNER.cpp
+git submodule update --init --recursive
+```
 
-Unpack it within the same derictory as GLiNER.cpp code.
+### <img src="https://github.com/user-attachments/assets/4d2fd37f-9882-4fea-902b-be5ccc1edae2" alt="image" height="30" width="30"> CPU build dependencies & instructions
+ - CMake (>= 3.25)
+ - [Rust](https://www.rust-lang.org/tools/install)
+ - [ONNXRuntime](https://github.com/microsoft/onnxruntime/releases) CPU version for your system
+ - OpenMP 
+
+You need to download [ONNX runtime](https://github.com/microsoft/onnxruntime/releases) for your system.
+
+Unpack it within the same directory as GLiNER.cpp code.
 
 For `tar.gz` files you can use the following command:
 ```bash
 tar -xvzf onnxruntime-linux-x64-1.19.2.tgz 
 ```
 
-Then create build directory and compile the project:
+Then create a build directory and compile the project:
 ```bash
 cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -S . -B build
 cmake --build build --target all -j
@@ -110,13 +122,21 @@ int main() {
 ```
 
 ## GPU
-
+### <img src="https://github.com/user-attachments/assets/92a49538-feb0-4fcb-8789-8d6edfc2ceed" alt="image" height="40" width="40"> GPU build dependencies & instruction
+ - CMake (>= 3.25)
+ - [Rust](https://www.rust-lang.org/tools/install)
+ - [ONNXRuntime](https://github.com/microsoft/onnxruntime/releases) GPU version for your system
+ - OpenMP
+ - NVIDIA GPU
+ - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
+ - [cuDNN](https://developer.nvidia.com/cudnn-downloads )
+   
 By default, the CPU is used. To use the GPU, you need to utilize the ONNX runtime with GPU support and set up cuDNN.
 Follow the instructions to install cuDNN here:
 
 https://developer.nvidia.com/cudnn-downloads
 
-Then create build directory and compile the project:
+Then create a build directory and compile the project:
 
 ```bash
 cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -D GPU_CHECK=ON -S . -B build
