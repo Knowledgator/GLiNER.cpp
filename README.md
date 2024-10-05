@@ -34,8 +34,8 @@ git submodule update --init --recursive
 ```
 
 **📦 CPU build dependencies & instructions**
- - CMake (>= 3.25)
- - [Rust](https://www.rust-lang.org/tools/install)
+ - CMake (>= 3.18)
+ - [Rust and Cargo](https://www.rust-lang.org/tools/install)
  - [ONNXRuntime](https://github.com/microsoft/onnxruntime/releases) CPU version for your system
  - OpenMP 
 
@@ -53,6 +53,7 @@ Then create a build directory and compile the project:
 cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -S . -B build
 cmake --build build --target all -j
 ```
+You need to provide the ONNXRUNTIME_ROOTDIR option, which should be set to the absolute path of the chosen ONNX runtime.
 
 To run main.cpp you need an ONNX format model and tokenizer.json. You can:
 
