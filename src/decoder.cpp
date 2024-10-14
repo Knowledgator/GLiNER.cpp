@@ -1,6 +1,4 @@
 #include <cmath>
-#include <string>
-#include <vector>
 
 #include "GLiNER/decoder.hpp"
 
@@ -10,14 +8,12 @@ float sigmoid(float x) {
     return 1.0 / (1.0 + std::exp(-x));
 }
 
-SpanDecoder::SpanDecoder(const Config& config) : config(config) {}
-
-bool SpanDecoder::isNested(const Span& s1, const Span& s2) {
+bool Decoder::isNested(const Span& s1, const Span& s2) {
     return (s1.startIdx <= s2.startIdx && s2.endIdx <= s1.endIdx) || (s2.startIdx <= s1.startIdx && s1.endIdx <= s2.endIdx);
 }
 
 // Check for any overlap between two spans
-bool SpanDecoder::hasOverlapping(const Span& s1, const Span& s2, bool multiLabel) {
+bool Decoder::hasOverlapping(const Span& s1, const Span& s2, bool multiLabel) {
     if (s1.startIdx == s2.startIdx && s1.endIdx == s2.endIdx) {
         return !multiLabel;
     }
@@ -28,11 +24,11 @@ bool SpanDecoder::hasOverlapping(const Span& s1, const Span& s2, bool multiLabel
 }
 
 // Check if spans overlap but are not nested inside each other
-bool SpanDecoder::hasOverlappingNested(const Span& s1, const Span& s2, bool multiLabel) {
+bool Decoder::hasOverlappingNested(const Span& s1, const Span& s2, bool multiLabel) {
     return hasOverlapping(s1, s2, multiLabel) || isNested(s1, s2);
 }
 
-std::vector<Span> SpanDecoder::greedySearch(
+std::vector<Span> Decoder::greedySearch(
     const std::vector<Span>& spans, bool flatNer, bool multiLabel
 ) { // expected sorted spans by start/end position
     if (spans.empty()) {
@@ -64,9 +60,21 @@ std::vector<Span> SpanDecoder::greedySearch(
     return newList;
 }
 
+std::vector<std::vector<Span>> Decoder::batchGreedySearch(
+    const std::vector<std::vector<Span>>& spans_batch, bool flatNer, bool multiLabel
+) { // expected sorted spans by start/end position in batches
+    // Apply greedy search to each batch
+    std::vector<std::vector<Span>> allSelectedSpans;
+    allSelectedSpans.reserve(spans_batch.size());
+    
+    for (const auto& batch : spans_batch) {
+        allSelectedSpans.push_back(greedySearch(batch, flatNer, multiLabel));
+    }
+    return allSelectedSpans;
+}
+
 std::vector<std::vector<Span>> SpanDecoder::decode(
-    const BatchOutput& batch,
-    int maxWidth,
+    const Batch* batch,
     const std::vector<std::string>& texts,
     const std::vector<std::string>& entities,
     const std::vector<float>& modelOutput,
@@ -74,12 +82,12 @@ std::vector<std::vector<Span>> SpanDecoder::decode(
     float threshold,
     bool multiLabel
 ) {
-    auto tokens = batch.batchTokens;
-    int batchSize = batch.batchPrompts.size();
-    int inputLength = batch.numWords;
+    auto tokens = batch->batchTokens;
+    int batchSize = batch->batchSize;
+    int inputLength = batch->numWords;
     int numEntities = entities.size();
 
-    int startTokenPadding = maxWidth * numEntities;
+    int startTokenPadding = batch->width() * numEntities;
     int batchPadding = inputLength * startTokenPadding;
     int endTokenPadding = numEntities;
 
@@ -87,35 +95,85 @@ std::vector<std::vector<Span>> SpanDecoder::decode(
     // Process the model output
     for (size_t id = 0; id < modelOutput.size(); ++id) {
         float value = modelOutput[id];
-        int batch = id / batchPadding;
+        int batch_id = id / batchPadding;
         size_t startToken = (id / startTokenPadding) % inputLength;
-        size_t endToken = startToken + ((id / endTokenPadding) % maxWidth);
+        size_t endToken = startToken + ((id / endTokenPadding) % batch->width());
         int entity = id % numEntities; // always one of entities
         float prob = sigmoid(value);
         
         if (prob >= threshold &&
-            batch < batchSize &&
-            startToken < tokens[batch].size() &&
-            endToken < tokens[batch].size()) {
+            batch_id < batchSize &&
+            startToken < tokens[batch_id].size() &&
+            endToken < tokens[batch_id].size()) {
 
             Span span;
-            span.startIdx = tokens[batch][startToken].start;
-            span.endIdx = tokens[batch][endToken].end;
-            std::string spanText = texts[batch].substr(span.startIdx, span.endIdx - span.startIdx);
-            span.text = spanText;
+            span.startIdx = tokens[batch_id][startToken].start;
+            span.endIdx = tokens[batch_id][endToken].end;
+            span.text = texts[batch_id].substr(span.startIdx, span.endIdx - span.startIdx);
             span.classLabel = entities[entity];
             span.prob = prob;
 
-            spans[batch].push_back(span);
+            spans[batch_id].push_back(span);
         }
-    }    
-
-    // Apply greedy search to each batch
-    std::vector<std::vector<Span>> allSelectedSpans(batchSize);
-
-    for (int batch = 0; batch < batchSize; ++batch) {
-        allSelectedSpans[batch] = greedySearch(spans[batch], flatNer, multiLabel);
     }
 
-    return allSelectedSpans;
+    return batchGreedySearch(spans, flatNer, multiLabel);
+}
+
+std::vector<std::vector<Span>> TokenDecoder::decode(
+    const Batch* batch,
+    const std::vector<std::string>& texts,
+    const std::vector<std::string>& entities,
+    const std::vector<float>& modelOutput,
+    bool flatNer,
+    float threshold,
+    bool multiLabel
+) {
+    auto tokens = batch->batchTokens;
+    int batchSize = batch->batchSize;
+    int inputLength = batch->numWords;
+    int numEntities = entities.size();
+
+    int batchPadding = inputLength * numEntities;
+    int positionPadding = batchSize * batchPadding;
+    int tokenPadding = numEntities;
+
+    std::vector<std::vector<Span>> spans(batchSize);
+    for (size_t start_id = 0; start_id < static_cast<size_t>(positionPadding); start_id++) {
+        if (
+            sigmoid(modelOutput[start_id]) < threshold 
+        ) {
+            continue;
+        }
+        
+        size_t batch_id = (start_id / batchPadding) % batchSize;
+        size_t startToken = (start_id / tokenPadding) % inputLength;
+        int entity = start_id % numEntities; // always one of entities
+        float score_sum = 0;
+        for (
+            size_t endToken = startToken, end_id = start_id + positionPadding; 
+            (((end_id / batchPadding) % batchSize) == batch_id) && (end_id < static_cast<size_t>(2*positionPadding));
+            endToken++, end_id += tokenPadding // span should contain same entity class
+        ) {
+            float score = sigmoid(modelOutput[end_id+positionPadding]);
+            if (
+                sigmoid(modelOutput[end_id]) < threshold
+                || score < threshold
+            ) {
+                break; // fast exit without skipping entities
+            }
+            score_sum += score;
+
+            Span span;
+            span.startIdx = tokens[batch_id][startToken].start;
+            span.endIdx = tokens[batch_id][endToken].end;
+            span.text = texts[batch_id].substr(span.startIdx, span.endIdx - span.startIdx);
+            span.classLabel = entities[entity];
+            span.prob = score_sum / (endToken - startToken + 1);
+
+            spans[batch_id].push_back(span);
+        }
+    }
+
+    return batchGreedySearch(spans, flatNer, multiLabel);
 }

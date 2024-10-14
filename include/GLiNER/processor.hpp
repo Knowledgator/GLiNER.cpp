@@ -4,28 +4,50 @@
 
 #include <vector>
 #include <string>
-#include <tuple>
 
 #include "gliner_config.hpp"
 #include "gliner_structs.hpp"
 #include "tokenizer_utils.hpp"
 
-using tokenizers::Tokenizer;
-
 namespace gliner {
-    class SpanProcessor {
+    class Processor {
     protected:
         Config config;
+        std::unique_ptr<tokenizers::Tokenizer> tokenizer;
         WhitespaceTokenSplitter wordSplitter;
-        Tokenizer& nonConstTokenizer;
 
-        void encodeInputs(const std::vector<Prompt>& prompts, BatchOutput& output);
-        void prepareSpans(const std::vector<Prompt>& prompts, int64_t MaxWidth, int64_t numWords, BatchOutput& output);
+        void encodeInputs(const std::vector<Prompt>& prompts, Batch* output);
+        virtual void prepareTextInputs(
+            const std::vector<std::string>& entities, Batch* output, std::vector<Prompt>& prompts
+        );
     public:
-        SpanProcessor(const Config& config, Tokenizer& tokenizer, const WhitespaceTokenSplitter& wordSplitter);
+        Processor(const Config& config, const std::string& tokenizer_path);
+        virtual ~Processor() {};
         std::vector<Token> tokenizeText(const std::string& text);
         std::vector<std::vector<Token>> batchTokenizeText(const std::vector<std::string>& texts);
-        std::vector<Prompt> prepareTextInputs(const std::vector<std::vector<Token>>& tokens, const std::vector<std::string>& entities);
-        BatchOutput prepareBatch(const std::vector<std::string>& texts, const std::vector<std::string>& entities);
+        
+        virtual Batch* prepareBatch(
+            const std::vector<std::string>& texts, const std::vector<std::string>& entities
+        ) = 0; 
+    };
+
+    class SpanProcessor : public Processor {
+    protected:
+        void prepareSpans(const std::vector<Prompt>& prompts, SpanBatch* output);
+    public:
+        SpanProcessor(const Config& config, const std::string& tokenizer_path);
+        virtual ~SpanProcessor() {};
+        virtual Batch* prepareBatch(
+            const std::vector<std::string>& texts, const std::vector<std::string>& entities
+        ); 
+    };
+
+    class TokenProcessor : public Processor {
+    public:
+        TokenProcessor(const Config& config, const std::string& tokenizer_path);
+        virtual ~TokenProcessor() {};
+        virtual Batch* prepareBatch(
+            const std::vector<std::string>& texts, const std::vector<std::string>& entities
+        ); 
     };
 }

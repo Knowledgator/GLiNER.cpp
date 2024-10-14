@@ -1,4 +1,4 @@
-# Basic Example with Small Gliner Model
+# Basic Example with Small GLiNER Model
 
 Before running the example, you need to download the ONNX runtime for your system.
 
@@ -17,7 +17,7 @@ Build the example and run:
 
 ```bash
 ./download-gliner_small-v2.1.sh
-cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -D GPU_CHECK=ON -S . -B build
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -S . -B build
 cmake --build build --target inference -j
 ./build/inference
 ```
@@ -35,7 +35,7 @@ Build the example with the ONNX runtime with GPU support and run:
 
 ```bash
 ./download-gliner_small-v2.1.sh
-cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-gpu-1.19.2" -S . -B build
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-gpu-1.19.2" -D GPU_CHECK=ON -S . -B build
 cmake --build build --target inference_gpu -j
 ./build/inference_gpu
 ```
@@ -45,8 +45,8 @@ To use GPU:
 - You need to specify it in this contructor using 'device_id' (used in example):
 
 ```c++
-int device_id = 0 // (CUDA:0)
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, 0); // device_id = 0 (CUDA:0)
+int device_id = 0; // (CUDA:0)
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, device_id); 
 ```
 
 OR
@@ -59,8 +59,28 @@ Ort::SessionOptions session_options = ...;
 gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
 ```
 
-## Model
+## Token Level GLiNER Models
 
-This example uses the gliner_small-v2.1 ONNX model, which can be found here:
+By default model uses span-level configuration. To use token-level models you need specify model type inside model config:
 
-https://huggingface.co/onnx-community/gliner_small-v2.1/tree/main
+```c++
+gliner::Config config{12, 512, gliner::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
+gliner::Model model("./gliner-multitask-large-v0.5/onnx/model.onnx", "./gliner-multitask-large-v0.5/tokenizer.json", config);
+```
+
+Build the example and run:
+
+```bash
+./download-gliner-multitask-large-v0.5.sh
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-gpu-1.19.2" -S . -B build
+cmake --build build --target inference_token_level -j
+./build/inference_token_level
+```
+
+## Models
+
+These examples use ONNX models, which can be found here:
+
+- gliner_small-v2.1 - a span-level model: https://huggingface.co/onnx-community/gliner_small-v2.1/tree/main
+
+- gliner-multitask-large-v0.5 - a token-level model: https://huggingface.co/onnx-community/gliner-multitask-large-v0.5/tree/main

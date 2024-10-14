@@ -3,25 +3,12 @@
 #include <string>
 
 #include "GLiNER/gliner_config.hpp"
-#include "GLiNER/processor.hpp"
-#include "GLiNER/decoder.hpp"
 #include "GLiNER/model.hpp"
-#include "GLiNER/tokenizer_utils.hpp"
 
 int main() {
-    gliner::Config config{12, 512};  // Set your max_width and max_length
-    gliner::WhitespaceTokenSplitter splitter;
-    auto blob = gliner::LoadBytesFromFile("./gliner_small-v2.1/tokenizer.json");
-    
-    // Create the tokenizer
-    auto tokenizer = Tokenizer::FromBlobJSON(blob);
-
-    // Create Processor and SpanDecoder
-    gliner::SpanProcessor processor(config, *tokenizer, splitter);
-    gliner::SpanDecoder decoder(config);
-
+    gliner::Config config{12, 512};  // Set your maxWidth and maxLength
     // Create Model
-    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder);
+    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config);
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};

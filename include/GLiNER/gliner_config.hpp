@@ -1,8 +1,14 @@
 #pragma once
 
 namespace gliner {
+    enum ModelType {
+        TOKEN_LEVEL,
+        SPAN_LEVEL
+    };
+
     struct Config {
-        int max_width;
-        int max_length;
+        int maxWidth;
+        int maxLength;
+        ModelType modelType = SPAN_LEVEL;
     };
 }

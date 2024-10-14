@@ -6,10 +6,9 @@
 #include "GLiNER/model.hpp"
 
 int main() {
-    gliner::Config config{12, 512};  // Set your maxWidth and maxLength
-    
-    int device_id = 0; // specified CUDA:0 device
-    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, device_id);
+    gliner::Config config{12, 512, gliner::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
+    // Create Model
+    gliner::Model model("./gliner-multitask-large-v0.5/onnx/model.onnx", "./gliner-multitask-large-v0.5/tokenizer.json", config);
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};

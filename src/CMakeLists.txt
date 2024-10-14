@@ -1,10 +1,11 @@
-add_library(gliner SHARED ${PROJECT_SOURCE_DIR}/include/GLiNER)
+add_library(gliner STATIC ${PROJECT_SOURCE_DIR}/include/GLiNER)
 
 target_sources(gliner PRIVATE 
     processor.cpp
     model.cpp
     decoder.cpp
     tokenizer_utils.cpp
+    gliner_structs.cpp
 )
 
 target_include_directories(gliner PUBLIC ${ONNXRUNTIME_INCLUDE})

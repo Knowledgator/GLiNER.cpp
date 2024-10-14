@@ -24,3 +24,8 @@ add_executable(inference_gpu inference_gpu.cpp)
 
 target_include_directories(inference_gpu PRIVATE ${GLINER_ROOTDIR}/include)
 target_link_libraries(inference_gpu gliner)
+
+add_executable(inference_token_level inference_token_level.cpp)
+
+target_include_directories(inference_token_level PRIVATE ${GLINER_ROOTDIR}/include)
+target_link_libraries(inference_token_level gliner)
