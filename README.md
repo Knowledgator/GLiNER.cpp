@@ -156,7 +156,7 @@ gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, de
 
 ## Token-based Models
 
-By default model uses span-level configuration. To use token-level models you need specify model type inside model config:
+By default, the model uses a span-level configuration. To use token-level models, you need to specify the model type in the model configuration:
 
 ```c++
 gliner::Config config{12, 512, gliner::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
