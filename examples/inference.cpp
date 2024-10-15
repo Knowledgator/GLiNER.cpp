@@ -9,6 +9,7 @@ int main() {
     gliner::Config config{12, 512};  // Set your maxWidth and maxLength
     // Create Model
     gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config);
+    // Provide the path to the model, the path to the tokenizer, and the configuration.
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};

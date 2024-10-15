@@ -10,6 +10,7 @@ int main() {
     
     int device_id = 0; // specified CUDA:0 device
     gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, device_id);
+    // Provide the path to the model, the path to the tokenizer, the configuration, and the device ID.
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};

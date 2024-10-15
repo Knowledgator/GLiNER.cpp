@@ -90,6 +90,7 @@ python convert_to_onnx.py --model_path /path/to/your/model --save_path /path/to/
 int main() {
     gliner::Config config{12, 512};  // Set your max_width and max_length
     gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config);
+    // Provide the path to the model, the path to the tokenizer, and the configuration.
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};
@@ -129,7 +130,7 @@ https://developer.nvidia.com/cudnn-downloads
 Then create a build directory and compile the project:
 
 ```bash
-cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -D GPU_CHECK=ON -S . -B build
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-gpu-1.19.2" -D GPU_CHECK=ON -S . -B build
 cmake --build build --target inference -j
 ```
 
@@ -141,7 +142,7 @@ To use GPU:
 
 ```c++
 int device_id = 0 // (CUDA:0)
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, device_id);
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, device_id);
 ```
 
 OR
@@ -151,7 +152,7 @@ OR
 ```c++
 Ort::Env env = ...;
 Ort::SessionOptions session_options = ...;
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, env, session_options);
 ```
 
 ## Token-based Models

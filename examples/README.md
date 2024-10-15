@@ -56,7 +56,7 @@ OR
 ```c++
 Ort::Env env = ...;
 Ort::SessionOptions session_options = ...;
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, env, session_options);
 ```
 
 ## Token Level GLiNER Models
