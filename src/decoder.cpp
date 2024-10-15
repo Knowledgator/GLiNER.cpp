@@ -150,26 +150,28 @@ std::vector<std::vector<Span>> TokenDecoder::decode(
         size_t startToken = (start_id / tokenPadding) % inputLength;
         int entity = start_id % numEntities; // always one of entities
         float score_sum = 0;
+        int n = 0;
         for (
             size_t endToken = startToken, end_id = start_id + positionPadding; 
             (((end_id / batchPadding) % batchSize) == batch_id) && (end_id < static_cast<size_t>(2*positionPadding));
             endToken++, end_id += tokenPadding // span should contain same entity class
         ) {
             float score = sigmoid(modelOutput[end_id+positionPadding]);
-            if (
-                sigmoid(modelOutput[end_id]) < threshold
-                || score < threshold
-            ) {
+            if (sigmoid(modelOutput[end_id]) < threshold) {
+                continue;
+            }
+            if (score < threshold) {
                 break; // fast exit without skipping entities
             }
             score_sum += score;
+            ++n;
 
             Span span;
             span.startIdx = tokens[batch_id][startToken].start;
             span.endIdx = tokens[batch_id][endToken].end;
             span.text = texts[batch_id].substr(span.startIdx, span.endIdx - span.startIdx);
             span.classLabel = entities[entity];
-            span.prob = score_sum / (endToken - startToken + 1);
+            span.prob = score_sum / n;
 
             spans[batch_id].push_back(span);
         }
