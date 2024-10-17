@@ -43,7 +43,7 @@ namespace gliner {
         void run(const std::vector<Ort::Value>& input_tensors, std::vector<float>& output);
         std::vector<std::vector<Span>> inference(
             const std::vector<std::string>& texts, const std::vector<std::string>& entities, 
-            bool flatNer = false, float threshold = 0.5, bool multiLabel = false
+            bool flatNer = true, float threshold = 0.5, bool multiLabel = false
         );
     };
 }

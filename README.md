@@ -176,11 +176,11 @@ GLiNER.cpp offers versatile entity recognition capabilities across various domai
 ...
 
 ## 🔧 Areas for Improvement
-
-- [ ] Further optimize inference speed
-- [ ] Implement bi-encoder GLiNER architecture for better scalability
-- [ ] Enable model training capabilities
-- [ ] Provide more usage examples
+- [x] Add support of token-level GLiNER models;
+- [ ] Further optimize inference speed;
+- [ ] Implement bi-encoder GLiNER architecture for better scalability;
+- [ ] Enable model training capabilities;
+- [ ] Provide more usage examples.
 
 
 ## 🙏 Acknowledgements
