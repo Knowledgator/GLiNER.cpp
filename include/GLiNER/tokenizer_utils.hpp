@@ -3,7 +3,6 @@
 #include <regex>
 #include <string>
 #include <vector>
-#include <tuple>
 
 #include "gliner_structs.hpp"
 

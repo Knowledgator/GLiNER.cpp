@@ -89,18 +89,8 @@ python convert_to_onnx.py --model_path /path/to/your/model --save_path /path/to/
 
 int main() {
     gliner::Config config{12, 512};  // Set your max_width and max_length
-    gliner::WhitespaceTokenSplitter splitter;
-    auto blob = gliner::LoadBytesFromFile("./gliner_small-v2.1/tokenizer.json");
-
-    // Create the tokenizer
-    auto tokenizer = Tokenizer::FromBlobJSON(blob);
-
-    // Create Processor and SpanDecoder
-    gliner::SpanProcessor processor(config, *tokenizer, splitter);
-    gliner::SpanDecoder decoder(config);
-
-    // Create Model
-    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder);
+    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config);
+    // Provide the path to the model, the path to the tokenizer, and the configuration.
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};
@@ -125,7 +115,7 @@ int main() {
 ## GPU
 **📦Build dependencies & instruction**
  - CMake (>= 3.25)
- - [Rust](https://www.rust-lang.org/tools/install)
+ - [Rust and Cargo](https://www.rust-lang.org/tools/install)
  - [ONNXRuntime](https://github.com/microsoft/onnxruntime/releases) GPU version for your system
  - OpenMP
  - NVIDIA GPU
@@ -140,7 +130,7 @@ https://developer.nvidia.com/cudnn-downloads
 Then create a build directory and compile the project:
 
 ```bash
-cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-1.19.2" -D GPU_CHECK=ON -S . -B build
+cmake -D ONNXRUNTIME_ROOTDIR="/home/usr/onnxruntime-linux-x64-gpu-1.19.2" -D GPU_CHECK=ON -S . -B build
 cmake --build build --target inference -j
 ```
 
@@ -152,7 +142,7 @@ To use GPU:
 
 ```c++
 int device_id = 0 // (CUDA:0)
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, device_id);
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, device_id);
 ```
 
 OR
@@ -162,7 +152,16 @@ OR
 ```c++
 Ort::Env env = ...;
 Ort::SessionOptions session_options = ...;
-gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, env, session_options);
+gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, env, session_options);
+```
+
+## Token-based Models
+
+By default, the model uses a span-level configuration. To use token-level models, you need to specify the model type in the model configuration:
+
+```c++
+gliner::Config config{12, 512, gliner::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
+gliner::Model model("./gliner-multitask-large-v0.5/onnx/model.onnx", "./gliner-multitask-large-v0.5/tokenizer.json", config);
 ```
 
 ## 🌟 Use Cases
@@ -177,12 +176,11 @@ GLiNER.cpp offers versatile entity recognition capabilities across various domai
 ...
 
 ## 🔧 Areas for Improvement
-
-- [ ] Further optimize inference speed
-- [ ] Add support for token-based GLiNER architecture
-- [ ] Implement bi-encoder GLiNER architecture for better scalability
-- [ ] Enable model training capabilities
-- [ ] Provide more usage examples
+- [x] Add support of token-level GLiNER models;
+- [ ] Further optimize inference speed;
+- [ ] Implement bi-encoder GLiNER architecture for better scalability;
+- [ ] Enable model training capabilities;
+- [ ] Provide more usage examples.
 
 
 ## 🙏 Acknowledgements

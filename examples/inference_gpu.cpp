@@ -3,26 +3,14 @@
 #include <string>
 
 #include "GLiNER/gliner_config.hpp"
-#include "GLiNER/processor.hpp"
-#include "GLiNER/decoder.hpp"
 #include "GLiNER/model.hpp"
-#include "GLiNER/tokenizer_utils.hpp"
 
 int main() {
-    gliner::Config config{12, 512};  // Set your max_width and max_length
-    gliner::WhitespaceTokenSplitter splitter;
-    auto blob = gliner::LoadBytesFromFile("./gliner_small-v2.1/tokenizer.json");
+    gliner::Config config{12, 512};  // Set your maxWidth and maxLength
     
-    // Create the tokenizer
-    auto tokenizer = Tokenizer::FromBlobJSON(blob);
-
-    // Create Processor and SpanDecoder
-    gliner::SpanProcessor processor(config, *tokenizer, splitter);
-    gliner::SpanDecoder decoder(config);
-
-    // Create Model
-    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder, 0);
-    // specified CUDA:0 device
+    int device_id = 0; // specified CUDA:0 device
+    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config, device_id);
+    // Provide the path to the model, the path to the tokenizer, the configuration, and the device ID.
 
     // A sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(gliner LANGUAGES CXX VERSION 0.0.1)
+project(gliner LANGUAGES CXX VERSION 0.0.2)
 
 # Update submodules
 option(UPDATE_SUBMODULES "Update submodules" ON)
@@ -89,7 +89,17 @@ if(NOT ONNXRUNTIME_LIB)
     message(FATAL_ERROR "ONNXRuntime library not found. Please check the library path.")
 endif()
 
-option(TOKENIZER_CPP_ROOTDIR "Tokenizer-cpp root dir")
+execute_process(
+    COMMAND cargo --version
+    RESULT_VARIABLE CARGO_RESULT
+    OUTPUT_QUIET
+    ERROR_QUIET
+)
+
+if(NOT CARGO_RESULT EQUAL 0)
+    message(FATAL_ERROR "Cargo is not available. You can install it by following the instructions here: https://www.rust-lang.org/tools/install")
+    set(GPU_CHECK OFF)
+endif()
 
 add_subdirectory(deps)
 add_subdirectory(src)

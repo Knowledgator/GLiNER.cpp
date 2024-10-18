@@ -6,9 +6,9 @@
 #include "GLiNER/model.hpp"
 
 int main() {
-    gliner::Config config{12, 512};  // Set your maxWidth and maxLength
+    gliner::Config config{12, 512, gliner::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
     // Create Model
-    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", "./gliner_small-v2.1/tokenizer.json", config);
+    gliner::Model model("./gliner-multitask-large-v0.5/onnx/model.onnx", "./gliner-multitask-large-v0.5/tokenizer.json", config);
     // Provide the path to the model, the path to the tokenizer, and the configuration.
 
     // A sample input
