@@ -1,21 +1,23 @@
 #pragma once
-
-#include <regex>
 #include <string>
 #include <vector>
-
 #include "gliner_structs.hpp"
 
 namespace gliner {
-    class WhitespaceTokenSplitter {
-    private:
-        std::regex whitespacePattern;
 
-    public:
-        WhitespaceTokenSplitter();
-        std::vector<Token> call(const std::string& text);
-    };
+class WhitespaceTokenSplitter {
+private:
+    struct Implementation;
+    std::unique_ptr<Implementation> pimpl;
 
-    // Utility functions for tokenizer
-    std::string LoadBytesFromFile(const std::string& path);
+public:
+    WhitespaceTokenSplitter();
+    ~WhitespaceTokenSplitter();
+    WhitespaceTokenSplitter(const WhitespaceTokenSplitter&) = delete;
+    WhitespaceTokenSplitter& operator=(const WhitespaceTokenSplitter&) = delete;
+    std::vector<Token> call(const std::string& text);
+};
+
+std::string LoadBytesFromFile(const std::string& path);
+
 }
