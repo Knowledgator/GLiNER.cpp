@@ -39,15 +39,10 @@ TEST(TestTopic, TestWhitespaceTokenSplitter) {
 }
 
 TEST(TestTopic, TestProcessor) {
-    gliner::WhitespaceTokenSplitter splitter;
     gliner::Config config{12, 512};
-    auto blob = gliner::LoadBytesFromFile("./gliner_small-v2.1/tokenizer.json");
-
-    // Create the tokenizer
-    auto tokenizer = Tokenizer::FromBlobJSON(blob);
 
     // Create Processor object
-    gliner::SpanProcessor processor(config, *tokenizer, splitter);
+    gliner::SpanProcessor processor(config, "/home/mvy/GLiNER.cpp/examples/gliner_small-v2.1/tokenizer.json");
 
     // Test tokenizeText
     std::string input = "Hello world";
@@ -84,23 +79,13 @@ bool compare_spans(const gliner::Span& a, const gliner::Span& b) {
 
 TEST(TestTopic, TestModelInference) {
     std::vector<std::vector<gliner::Span>> res_map = {{
-        {.startIdx = 0, .endIdx = 4, .text = "Kyiv", .classLabel = "city", .prob = 0.9},
-        {.startIdx = 23, .endIdx = 30, .text = "Ukraine", .classLabel = "country", .prob = 0.9},
+        {0, 4, "Kyiv", "city", 0.9},
+        {23, 30, "Ukraine", "country", 0.9},
     }};
 
     gliner::Config config{12, 512};  // Set your max_width and max_length
-    gliner::WhitespaceTokenSplitter splitter;
-    auto blob = gliner::LoadBytesFromFile("./gliner_small-v2.1/tokenizer.json");
-    
-    // Create the tokenizer
-    auto tokenizer = Tokenizer::FromBlobJSON(blob);
-
-    // Create Processor and SpanDecoder
-    gliner::SpanProcessor processor(config, *tokenizer, splitter);
-    gliner::SpanDecoder decoder(config);
-
     // Create Model
-    gliner::Model model("./gliner_small-v2.1/onnx/model.onnx", config, processor, decoder);
+    gliner::Model model("/home/mvy/GLiNER.cpp/examples/gliner_small-v2.1/onnx/model.onnx", "/home/mvy/GLiNER.cpp/examples/gliner_small-v2.1/tokenizer.json", config);
 
     // Test case: Inference on a sample input
     std::vector<std::string> texts = {"Kyiv is the capital of Ukraine."};
@@ -125,5 +110,39 @@ TEST(TestTopic, TestModelInference) {
                       << "Prob: " << expected.prob << std::endl;
             EXPECT_EQ(compare_spans(span, expected), true);
         }
+    }
+}
+
+TEST(TestTopic, TestUnicodes) {
+    std::vector<gliner::Token> res_map = {
+        {0, 6, "你好"}, 
+        {7, 8, "("},
+        {8, 15, "Chinese"},
+        {15, 16, ")"},
+        {16, 17, ","},
+        {18, 36, "नमस्ते"},
+        {37, 38, "("},
+        {38, 43, "Hindi"},
+        {43, 44, ")"},
+        {44, 45, ","},
+        {46, 56, "مرحبا"},
+        {57, 58, "("},
+        {58, 64, "Arabic"},
+        {64, 65, ")"},
+    };
+
+    gliner::WhitespaceTokenSplitter splitter;
+
+    std::string text1 = "你好 (Chinese), नमस्ते (Hindi), مرحبا (Arabic)";
+    auto result1 = splitter.call(text1);
+    std::cout << "Results: " << result1.size() << " / " << res_map.size() << std::endl;
+
+    std::cout << "Test WhitespaceTokenSplitter:" << std::endl;
+    for (size_t i = 0; i < result1.size(); i++) {
+        auto word = result1[i];
+        auto expected_word = res_map[i];
+        std::cout << "Actual: Word: " << word.text << ", Start: " << word.start << ", End: " << word.end << std::endl;
+        std::cout << "Expected: Word: " << expected_word.text << ", Start: " << expected_word.start << ", End: " << expected_word.end << std::endl;
+        EXPECT_EQ(compare_tokens(word, res_map[i]), true);
     }
 }

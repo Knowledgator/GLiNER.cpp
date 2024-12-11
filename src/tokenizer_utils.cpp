@@ -99,7 +99,7 @@ namespace gliner
     WhitespaceTokenSplitter::WhitespaceTokenSplitter()
         : pimpl(std::make_unique<Implementation>())
     {
-        pimpl->pcre2.compilePattern("\\w+(?:[-_]\\w+)*|\\X");
+        pimpl->pcre2.compilePattern("\\w+(?:[-_]\\w+)*|\\S");
     }
 
     WhitespaceTokenSplitter::~WhitespaceTokenSplitter() = default;
