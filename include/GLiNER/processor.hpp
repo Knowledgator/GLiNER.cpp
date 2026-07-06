@@ -15,6 +15,8 @@ namespace gliner {
         Config config;
         std::unique_ptr<tokenizers::Tokenizer> tokenizer;
         WhitespaceTokenSplitter wordSplitter;
+        int32_t clsTokenId = 1;
+        int32_t sepTokenId = 2;
 
         void encodeInputs(const std::vector<Prompt>& prompts, Batch* output);
         virtual void prepareTextInputs(
