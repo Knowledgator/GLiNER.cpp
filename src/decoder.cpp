@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "GLiNER/decoder.hpp"
@@ -79,21 +80,32 @@ std::vector<Span> Decoder::greedySearch(
         hasOv = hasOverlappingNested;
     }
 
+    std::vector<Span> sortedSpans = spans;
+    std::sort(sortedSpans.begin(), sortedSpans.end(), [](const Span& a, const Span& b) {
+        return a.prob > b.prob;
+    });
+
     std::vector<Span> newList;
     newList.reserve(spans.size());
 
-    size_t prev = 0, next = 1;
-    for (; next < spans.size(); next++) {
-        if (!hasOv(spans[prev], spans[next], multiLabel)) {
-            newList.push_back(spans[prev]);
-            prev = next;
-        } else {
-            if (spans[prev].prob < spans[next].prob) { // get span with higher score on overlap
-                prev = next;
+    for (const auto& span : sortedSpans) {
+        bool overlapDetected = false;
+        for (const auto& selected : newList) {
+            if (hasOv(span, selected, multiLabel)) {
+                overlapDetected = true;
+                break;
             }
         }
+
+        if (!overlapDetected) {
+            newList.push_back(span);
+        }
     }
-    newList.push_back(spans[prev]);
+
+    std::sort(newList.begin(), newList.end(), [](const Span& a, const Span& b) {
+        return a.startIdx < b.startIdx;
+    });
+
     return newList;
 }
 
@@ -176,50 +188,57 @@ std::vector<std::vector<Span>> TokenDecoder::decode(
     int inputLength = batch->numWords;
     int numEntities = entities.size();
 
-    int batchPadding = inputLength * numEntities;
-    int positionPadding = batchSize * batchPadding;
-    int tokenPadding = numEntities;
+    auto outputAt = [&](int batchId, int tokenId, int entityId, int channel) -> float {
+        size_t idx = (
+            ((static_cast<size_t>(batchId) * inputLength + tokenId) * numEntities + entityId) * 3 + channel
+        );
+        return modelOutput[idx];
+    };
 
     std::vector<std::vector<Span>> spans(batchSize);
-    for (size_t start_id = 0; start_id < static_cast<size_t>(positionPadding); start_id++) {
-        if (
-            sigmoid(modelOutput[start_id]) < threshold 
-        ) {
-            continue;
-        }
-        
-        size_t batch_id = (start_id / batchPadding) % batchSize;
-        size_t startToken = (start_id / tokenPadding) % inputLength;
-        int entity = start_id % numEntities; // always one of entities
-        float score_sum = 0;
-        int n = 0;
-        for (
-            size_t endToken = startToken, end_id = start_id + positionPadding; 
-            (((end_id / batchPadding) % batchSize) == batch_id) && (end_id < static_cast<size_t>(2*positionPadding));
-            endToken++, end_id += tokenPadding // span should contain same entity class
-        ) {
-            float score = sigmoid(modelOutput[end_id+positionPadding]);
-            if (sigmoid(modelOutput[end_id]) < threshold) {
-                continue;
-            }
-            if (score < threshold) {
-                break; // fast exit without skipping entities
-            }
-            score_sum += score;
-            ++n;
 
-            Span span;
-            span.startIdx = tokens[batch_id][startToken].start;
-            span.endIdx = tokens[batch_id][endToken].end;
-            span.classLabel = entities[entity];
-            span.prob = score_sum / n;
+    for (int batchId = 0; batchId < batchSize; ++batchId) {
+        for (int entityId = 0; entityId < numEntities; ++entityId) {
+            for (int startToken = 0; startToken < inputLength; ++startToken) {
+                float startScore = sigmoid(outputAt(batchId, startToken, entityId, 0));
+                if (startScore < threshold) {
+                    continue;
+                }
 
-            // Safely extract span text with bounds checking
-            span.text = safeCopySpanText(span, texts[batch_id]);
+                for (int endToken = startToken; endToken < inputLength; ++endToken) {
+                    float endScore = sigmoid(outputAt(batchId, endToken, entityId, 1));
+                    if (endScore < threshold) {
+                        continue;
+                    }
 
-            // Skip spans with invalid indices that couldn't extract text
-            if (!span.text.empty()) {
-                spans[batch_id].push_back(span);
+                    float spanScore = std::min(startScore, endScore);
+                    bool validInside = true;
+                    for (int tokenId = startToken; tokenId <= endToken; ++tokenId) {
+                        float insideScore = sigmoid(outputAt(batchId, tokenId, entityId, 2));
+                        if (insideScore < threshold) {
+                            validInside = false;
+                            break;
+                        }
+                        spanScore = std::min(spanScore, insideScore);
+                    }
+
+                    if (!validInside ||
+                        startToken >= static_cast<int>(tokens[batchId].size()) ||
+                        endToken >= static_cast<int>(tokens[batchId].size())) {
+                        continue;
+                    }
+
+                    Span span;
+                    span.startIdx = tokens[batchId][startToken].start;
+                    span.endIdx = tokens[batchId][endToken].end;
+                    span.classLabel = entities[entityId];
+                    span.prob = spanScore;
+                    span.text = safeCopySpanText(span, texts[batchId]);
+
+                    if (!span.text.empty()) {
+                        spans[batchId].push_back(span);
+                    }
+                }
             }
         }
     }

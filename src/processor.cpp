@@ -8,6 +8,14 @@ Processor::Processor(const Config& config, const std::string& tokenizer_path)
     : config(config), wordSplitter(WhitespaceTokenSplitter()) {
     const std::string blob = LoadBytesFromFile(tokenizer_path);
     tokenizer = tokenizers::Tokenizer::FromBlobJSON(blob);
+    int32_t tokenizerClsTokenId = tokenizer->TokenToId("[CLS]");
+    int32_t tokenizerSepTokenId = tokenizer->TokenToId("[SEP]");
+    if (tokenizerClsTokenId >= 0) {
+        clsTokenId = tokenizerClsTokenId;
+    }
+    if (tokenizerSepTokenId >= 0) {
+        sepTokenId = tokenizerSepTokenId;
+    }
 }
 
 std::vector<Token> Processor::tokenizeText(const std::string& text) {
@@ -90,7 +98,7 @@ void Processor::encodeInputs(const std::vector<Prompt>& prompts, Batch* output) 
         int64_t promptLength = prompts[p].promptLength;
 
         size_t idx = p * output->numTokens;
-        output->inputsIds[idx] = 1; // initial token id
+        output->inputsIds[idx] = clsTokenId;
         output->attentionMasks[idx] = 1;
         idx++;
 
@@ -109,7 +117,7 @@ void Processor::encodeInputs(const std::vector<Prompt>& prompts, Batch* output) 
             }
         }
         output->attentionMasks[idx] = 1;
-        output->inputsIds[idx] = 2;
+        output->inputsIds[idx] = sepTokenId;
     }
 }
 
