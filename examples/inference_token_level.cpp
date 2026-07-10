@@ -7,7 +7,7 @@
 int main() {
     gliner::Config config{12, 512, gliner::ModelType::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
     // Create Model
-    gliner::Model model("./gliner-pii-scudio-edge/model.onnx", "./gliner-pii-scudio-edge/tokenizer.json", config);
+    gliner::Model model("./gliner-multitask-large-v0.5/onnx/model.onnx", "./gliner-multitask-large-v0.5/tokenizer.json", config);
     // Provide the path to the model, the path to the tokenizer, and the configuration.
 
     // A sample input
