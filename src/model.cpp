@@ -2,6 +2,13 @@
 
 #include "GLiNER/model.hpp"
 
+#if defined(_WIN32)
+#include <string>
+inline std::wstring toWstring(const std::string& path) {
+    return std::wstring(path.begin(), path.end());
+}
+#endif
+
 using namespace gliner;
 
 Model::Model(
@@ -10,7 +17,11 @@ Model::Model(
 {
     env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "gliner");
     sessionOptions = new Ort::SessionOptions();
-    session = new Ort::Session(*env, modelPath.data(), *sessionOptions);
+    #if defined(_WIN32)
+        session = new Ort::Session(*env, toWstring(modelPath).c_str(), *sessionOptions);
+    #else
+        session = new Ort::Session(*env, modelPath.data(), *sessionOptions);
+    #endif
     initialize(tokenizer_path);
 }
 
@@ -21,7 +32,11 @@ Model::Model(
     env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "gliner");
     sessionOptions = new Ort::SessionOptions();
     useDevice(sessionOptions, device_id);
-    session = new Ort::Session(*env, modelPath.data(), *sessionOptions);
+    #if defined(_WIN32)
+        session = new Ort::Session(*env, toWstring(modelPath).c_str(), *sessionOptions);
+    #else
+        session = new Ort::Session(*env, modelPath.data(), *sessionOptions);
+    #endif
     initialize(tokenizer_path);
 }
 
@@ -29,7 +44,11 @@ Model::Model(
     const std::string& path, const std::string& tokenizer_path, const Config& config, const Ort::Env& env, const Ort::SessionOptions& session_options
 ) : modelPath(path), config(config)
 {
-    session = new Ort::Session(env, modelPath.data(), session_options);
+    #if defined(_WIN32)
+        session = new Ort::Session(env, toWstring(modelPath).c_str(), session_options);
+    #else
+        session = new Ort::Session(env, modelPath.data(), session_options);
+    #endif
     initialize(tokenizer_path);
 }
 
