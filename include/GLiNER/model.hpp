@@ -5,13 +5,14 @@
 #include <vector>
 #include <string>
 
+#include "gliner_export.hpp"
 #include "gliner_structs.hpp"
 #include "processor.hpp"
 #include "decoder.hpp"
 
 
 namespace gliner {
-    class Model {
+    class GLINER_API Model {
     protected:
         const std::string& modelPath;
         Config config;

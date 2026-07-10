@@ -2,11 +2,10 @@
 #include <vector>
 #include <string>
 
-#include "GLiNER/gliner_config.hpp"
-#include "GLiNER/model.hpp"
+#include "GLiNER/gliner.hpp"
 
 int main() {
-    gliner::Config config{12, 512, gliner::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
+    gliner::Config config{12, 512, gliner::ModelType::TOKEN_LEVEL};  // Set your maxWidth, maxLength and modelType
     // Create Model
     gliner::Model model("./gliner-multitask-large-v0.5/onnx/model.onnx", "./gliner-multitask-large-v0.5/tokenizer.json", config);
     // Provide the path to the model, the path to the tokenizer, and the configuration.
@@ -20,6 +19,7 @@ int main() {
     std::cout << "\nTest Model Inference:" << std::endl;
     for (size_t batch = 0; batch < output.size(); ++batch) {
         std::cout << "Batch " << batch << ":\n";
+        std::cout << "Text: " << texts[batch] << std::endl;
         for (const auto& span : output[batch]) {
             std::cout << "  Span: [" << span.startIdx << ", " << span.endIdx << "], "
                       << "Class: " << span.classLabel << ", "
