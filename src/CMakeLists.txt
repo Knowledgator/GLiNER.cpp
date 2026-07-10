@@ -1,4 +1,12 @@
-add_library(gliner STATIC ${PROJECT_SOURCE_DIR}/include/GLiNER)
+option(GLINER_BUILD_SHARED "Build gliner as a shared library (DLL)" ON)
+
+if(GLINER_BUILD_SHARED)
+    add_library(gliner SHARED)
+    target_compile_definitions(gliner PRIVATE GLINER_EXPORTS)
+    target_compile_definitions(gliner PUBLIC GLINER_BUILD_SHARED)
+else()
+    add_library(gliner STATIC)
+endif()
 
 target_sources(gliner PRIVATE 
     processor.cpp

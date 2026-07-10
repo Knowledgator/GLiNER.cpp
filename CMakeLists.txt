@@ -42,22 +42,48 @@ set(PCRE2_LIBRARIES pcre2-8)
 option(BUILD_EXAMPLES "Build example programs" OFF)
 
 # Find ONNXRuntime library
-option(ONNXRUNTIME_ROOTDIR "Onnxruntime root dir")
-if(NOT ONNXRUNTIME_ROOTDIR)
-    message(FATAL_ERROR "The ONNXRuntime path must be specified. Use the -D ONNXRUNTIME_ROOTDIR='absolute_path' option to set it.")
+option(ONNXRUNTIME_ROOTDIR "root dir containing include/ and lib/")
+option(ONNXRUNTIME_INCLUDE_DIR "Path to ONNXRuntime include directory (containing onnxruntime_cxx_api.h etc.)")
+option(ONNXRUNTIME_LIB_DIR "Path to ONNXRuntime lib directory (containing onnxruntime.lib / .dll / .so)")
+
+if(ONNXRUNTIME_ROOTDIR)
+    if(NOT ONNXRUNTIME_INCLUDE_DIR)
+        set(ONNXRUNTIME_INCLUDE_DIR "${ONNXRUNTIME_ROOTDIR}/include")
+    endif()
+    if(NOT ONNXRUNTIME_LIB_DIR)
+        set(ONNXRUNTIME_LIB_DIR "${ONNXRUNTIME_ROOTDIR}/lib")
+    endif()
+endif()
+
+if(NOT ONNXRUNTIME_INCLUDE_DIR)
+    message(FATAL_ERROR "The ONNXRuntime include path must be specified. Use -D ONNXRUNTIME_INCLUDE_DIR='path' to set it, or set path to root dir via ONNXRUNTIME_ROOTDIR")
+endif()
+
+if(NOT ONNXRUNTIME_LIB_DIR)
+    message(FATAL_ERROR "The ONNXRuntime lib path must be specified. Use -D ONNXRUNTIME_LIB_DIR='path' to set it, or set path to root dir via ONNXRUNTIME_ROOTDIR")
 endif()
 
 set(ONNXRUNTIME_INCLUDE
-${ONNXRUNTIME_ROOTDIR}/include
-${ONNXRUNTIME_ROOTDIR}/include/onnxruntime
-${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session
+    ${ONNXRUNTIME_INCLUDE_DIR}
+    ${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime
+    ${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime/core/session
 )
 
 include_directories(
     ${ONNXRUNTIME_INCLUDE}
 )
 
-link_directories(${ONNXRUNTIME_ROOTDIR}/lib)
+link_directories(${ONNXRUNTIME_LIB_DIR})
+
+find_library(ONNXRUNTIME_LIB
+    NAMES onnxruntime libonnxruntime
+    PATHS ${ONNXRUNTIME_LIB_DIR}
+    NO_DEFAULT_PATH
+)
+
+if(NOT ONNXRUNTIME_LIB)
+    message(FATAL_ERROR "ONNXRuntime library not found. Please check the library path.")
+endif()
 
 option(GPU_CHECK "Check GPU dependencies." OFF)
 if (GPU_CHECK)
@@ -99,16 +125,6 @@ if (GPU_CHECK)
     if (NOT GPU_CHECK)
         message(FATAL_ERROR "CUDA GPU dependencies were not resolved. Please check the logs and try again.")
     endif()
-endif()
-
-find_library(ONNXRUNTIME_LIB
-    NAMES onnxruntime libonnxruntime
-    PATHS ${ONNXRUNTIME_ROOTDIR}/lib
-    NO_DEFAULT_PATH
-)
-
-if(NOT ONNXRUNTIME_LIB)
-    message(FATAL_ERROR "ONNXRuntime library not found. Please check the library path.")
 endif()
 
 execute_process(
